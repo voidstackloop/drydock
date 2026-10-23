@@ -1,0 +1,12 @@
+CompileFlags:
+  CompilationDatabase: build
+  Remove:
+    - -fmodules-ts
+    - -fmodule-mapper=*
+    - -fdeps-format=*
+    
+Diagnostics:
+  Suppress:
+    - undeclared_var_use
+    - invalid_consteval_call
+    - incomplete_member_access

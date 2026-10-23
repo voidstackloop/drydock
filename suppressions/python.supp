@@ -1,0 +1,9 @@
+# leakcheck dynamic -s suppressions/python.supp python3 script.py
+#
+# CPython keeps many allocations for the life of the process and does not free
+# them at exit (interned strings, type objects, the import system's tables).
+# They are reported as "definitely lost". `near:` looks at the innermost three
+# frames only, so these rules hide blocks the interpreter itself allocated
+# and leave alone what a C extension or ctypes call allocated through it.
+leak:near:*/python3*
+leak:near:*libpython*

@@ -1,0 +1,9 @@
+*.vscode
+*build/
+# The training samples are live malicious code and belong to nobody's checkout.
+data/
+.venv-train/
+__pycache__/
+*.cursor
+
+.session_busy
