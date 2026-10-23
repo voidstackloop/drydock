@@ -1,0 +1,150 @@
+name: Release
+
+# A tag publishes. The manual run builds exactly the same archives without
+# creating a release, so the packaging can be tested before the first tag.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  linux-x86_64:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Build and package
+        run: |
+          set -euo pipefail
+          version=$(cat VERSION)
+          name="leakcheck-$version-linux-x86_64"
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLEAKCHECK_BUILD_TESTS=OFF
+          cmake --build build --parallel
+          cmake --install build --prefix "$PWD/stage/$name"
+          tar -C stage -czf "$name.tar.gz" "$name"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86_64
+          path: leakcheck-*.tar.gz
+
+  linux-aarch64:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build g++-aarch64-linux-gnu
+      - name: Build and package
+        run: |
+          set -euo pipefail
+          version=$(cat VERSION)
+          name="leakcheck-$version-linux-aarch64"
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DLEAKCHECK_BUILD_TESTS=OFF \
+            -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++
+          cmake --build build --parallel
+          cmake --install build --prefix "$PWD/stage/$name"
+          tar -C stage -czf "$name.tar.gz" "$name"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-aarch64
+          path: leakcheck-*.tar.gz
+
+  macos-arm64:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - run: brew install ninja
+      - name: Build and package
+        run: |
+          set -euo pipefail
+          version=$(cat VERSION)
+          name="leakcheck-$version-macos-arm64"
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLEAKCHECK_BUILD_TESTS=OFF
+          cmake --build build --parallel
+          cmake --install build --prefix "$PWD/stage/$name"
+          tar -C stage -czf "$name.tar.gz" "$name"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64
+          path: leakcheck-*.tar.gz
+
+  macos-x86_64:
+    runs-on: macos-15-intel
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - run: brew install ninja
+      - name: Build and package
+        run: |
+          set -euo pipefail
+          version=$(cat VERSION)
+          name="leakcheck-$version-macos-x86_64"
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLEAKCHECK_BUILD_TESTS=OFF
+          cmake --build build --parallel
+          cmake --install build --prefix "$PWD/stage/$name"
+          tar -C stage -czf "$name.tar.gz" "$name"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-x86_64
+          path: leakcheck-*.tar.gz
+
+  windows-x86_64:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: mingw-w64-x86_64-gcc
+          path-type: inherit
+      - name: Build
+        run: pwsh -File build-windows.ps1 -Build build
+      - name: Package
+        shell: pwsh
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          $name = "leakcheck-$version-windows-x86_64"
+          $root = "stage/$name"
+          New-Item -ItemType Directory -Force "$root/bin", "$root/share/leakcheck/model", "$root/share/doc/leakcheck" | Out-Null
+          Copy-Item build/leakcheck.exe, build/leakcheck_preload.dll "$root/bin"
+          Copy-Item model/pe-malware.ai, model/pe-malware.metrics.json "$root/share/leakcheck/model"
+          Copy-Item LICENSE, README.md, docs/REFERENCE.md, docs/MODEL.md "$root/share/doc/leakcheck"
+          Compress-Archive -Path $root -DestinationPath "$name.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x86_64
+          path: leakcheck-*.zip
+
+  release:
+    needs: [linux-x86_64, linux-aarch64, macos-arm64, macos-x86_64, windows-x86_64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "dist/*"
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$GITHUB_REF_NAME" dist/*
+          --repo "$GITHUB_REPOSITORY"
+          --title "leakcheck $GITHUB_REF_NAME"
+          --generate-notes

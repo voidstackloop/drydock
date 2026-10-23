@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.28)
-project(leakcheck LANGUAGES C CXX)
+# VERSION is the one place the release number lives: CMake, the Windows script
+# and the release workflow all read it, so `--version` cannot disagree with the tag.
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" LEAKCHECK_VERSION LIMIT_COUNT 1)
+project(leakcheck VERSION ${LEAKCHECK_VERSION} LANGUAGES C CXX)
+include(GNUInstallDirs)
 if(WIN32)
     enable_language(RC) # the manifest that makes leakcheck.exe's strings UTF-8
 endif()
@@ -137,6 +141,22 @@ if(NOT WIN32)
     add_dependencies(leakcheck leakcheck_preload)
 endif()
 
+# --version: the release, the commit and the build type, so a report names the
+# exact binary. A source tarball without git has "unknown" rather than a lie.
+execute_process(COMMAND git rev-parse --short HEAD
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    OUTPUT_VARIABLE LEAKCHECK_GIT_HASH OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+if(NOT LEAKCHECK_GIT_HASH)
+    set(LEAKCHECK_GIT_HASH "unknown")
+endif()
+file(WRITE "${CMAKE_BINARY_DIR}/leakcheck_version.h"
+    "#pragma once\n#define LEAKCHECK_VERSION \"${LEAKCHECK_VERSION}\"\n"
+    "#define LEAKCHECK_GIT_HASH \"${LEAKCHECK_GIT_HASH}\"\n"
+    "#define LEAKCHECK_BUILD_TYPE \"${CMAKE_BUILD_TYPE}\"\n")
+target_include_directories(leakcheck PRIVATE ${CMAKE_BINARY_DIR})
+target_compile_definitions(leakcheck PRIVATE
+    LEAKCHECK_MODEL_PATH="${CMAKE_INSTALL_FULL_DATADIR}/leakcheck/model/pe-malware.ai")
+
 option(LEAKCHECK_BUILD_TESTS "Build the test programs and register tests" ON)
 if(LEAKCHECK_BUILD_TESTS)
     enable_testing()
@@ -236,3 +256,16 @@ if(LEAKCHECK_BUILD_TESTS)
         endforeach()
     endif()
 endif()
+
+# cmake --install. The preload library goes beside the binary because that is
+# where the binary looks for it; the model goes where the compiled-in path and
+# a relocated tree (bin/../share) both find it.
+install(TARGETS leakcheck RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS leakcheck_preload
+    LIBRARY DESTINATION ${CMAKE_INSTALL_BINDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(DIRECTORY model/ DESTINATION ${CMAKE_INSTALL_DATADIR}/leakcheck/model
+    FILES_MATCHING PATTERN "*.ai" PATTERN "*.json")
+install(FILES docs/leakcheck.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
+install(FILES LICENSE README.md docs/REFERENCE.md docs/MODEL.md
+    DESTINATION ${CMAKE_INSTALL_DOCDIR})

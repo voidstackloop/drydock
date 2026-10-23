@@ -1,0 +1,106 @@
+.TH LEAKCHECK 1 "2026" "leakcheck 1.0.0" "User Commands"
+.SH NAME
+leakcheck \- find memory bugs, leaked resources, weak source and malware in C and C++ programs
+.SH SYNOPSIS
+.B leakcheck
+.I mode
+.RI [ options ]
+.I target
+.RI [ target-args ...]
+.SH DESCRIPTION
+.B leakcheck
+has three independent modes that share one reporter, so the console, JSON and
+SARIF output and the exit status are the same from each.
+.TP
+.B dynamic
+Runs the program with a tracking library loaded into it and reports what
+actually happened: leaks, double frees, use after free, overflows, leaked
+descriptors and processes, deadlocks, and what a trojan does to the machine.
+The program is executed; run untrusted programs in a virtual machine.
+.TP
+.B static
+Parses C and C++ sources and follows pointers, handles and locks through each
+function, and reads the source for weaknesses such as format strings, command
+injection, unbounded copies, hard-coded secrets and check-then-use races. There
+is no compiler front end, so it runs anywhere in milliseconds and is tuned for
+few false alarms rather than completeness.
+.TP
+.B scan
+Reads files and folders for signs of malware without executing anything.
+.TP
+.B ai-features
+Prints the numbers
+.B scan --ai
+reads from each Windows program. It exists for training the classifier.
+.SH OPTIONS
+Options go before the target. In dynamic mode everything after the program is
+passed to it unchanged.
+.TP
+.BR \-o ", " \-\-output " " \fIfile\fR
+Write the report to \fIfile\fR instead of standard output. Required for
+\fB\-f json\fR and \fB\-f sarif\fR in dynamic mode.
+.TP
+.BR \-f ", " \-\-format " " \fIconsole|json|sarif\fR
+Output format. The default is \fBconsole\fR; \fBsarif\fR is SARIF 2.1.0 for
+code-scanning services.
+.TP
+.BR \-s ", " \-\-suppressions " " \fIfile\fR
+Ignore findings matching rules written as \fItype\fR:\fIpattern\fR.
+.TP
+.BR \-\-error\-exitcode " " \fIn\fR
+Exit status when problems are found, 1 to 255. The default is 2.
+.TP
+.B \-\-malware
+Also look for the 100 malware families, in files, in source and in what the
+program does. Much slower; off by default.
+.TP
+.B \-\-ai
+In scan mode, also ask the trained classifier about every Windows program.
+Needs \fImodel/pe\-malware.ai\fR.
+.TP
+.BR \-\-ai\-model " " \fIfile\fR ", " \-\-ai\-threshold " " \fI0..1\fR
+Use another model, or another score above which a file counts as malware.
+.TP
+.BR \-j ", " \-\-jobs " " \fIn\fR
+Files read at the same time, for scan, static and ai-features. The default is
+one per CPU; the report is identical for any number.
+.TP
+.BR \-V ", " \-\-version
+Print the version, the commit it was built from, the build type and the
+classifier it would use.
+.TP
+.BR \-h ", " \-\-help
+Print the full option list, including the dynamic-mode options
+(\fB\-\-guard\-every\fR, \fB\-\-quarantine\-mb\fR, \fB\-\-stack\-depth\fR,
+\fB\-\-fast\-unwind\fR, \fB\-\-abort\-on\-error\fR, \fB\-\-trace\-children\fR,
+\fB\-\-show\-reachable\fR, \fB\-\-no\-leak\-check\fR).
+.SH EXIT STATUS
+.TP
+.B 2
+Something was found (change with \fB\-\-error\-exitcode\fR).
+.TP
+.B 1
+Usage error, or nothing could be analysed.
+.TP
+.B 0
+Clean. In dynamic mode the program's own status is returned instead, and
+\fB127\fR when it could not be started.
+.SH FILES
+.TP
+.I model/pe\-malware.ai
+The shipped classifier, found next to the binary, next to the project root, or
+under \fIshare/leakcheck/model\fR.
+.TP
+.I libleakcheck_preload.so
+The runtime injected in dynamic mode. On Windows,
+\fIleakcheck_preload.dll\fR. It must stay beside the \fBleakcheck\fR binary.
+.SH EXAMPLES
+.nf
+leakcheck dynamic ./my_program arg1
+leakcheck static src/ \-f sarif \-o leakcheck.sarif
+leakcheck scan ./downloads/
+leakcheck scan \-\-ai ./downloads/ \-f json \-o scan.json
+.fi
+.SH SEE ALSO
+The full reference, the design notes and the model description are installed
+under \fIshare/doc/leakcheck\fR and kept in the source tree under \fIdocs/\fR.

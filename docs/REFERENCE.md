@@ -166,6 +166,19 @@ ctest --test-dir build --output-on-failure
 
 `build/leakcheck` must stay next to `build/libleakcheck_preload.so`.
 
+The version comes from `VERSION` (one number for CMake, the Windows script and
+the tag); `--version` adds the commit and the build type. A build without CMake
+and without that header says `0.0.0-dev` rather than pretending.
+
+**Install.** `cmake --install build --prefix /usr/local` writes `bin/leakcheck`
+and `bin/libleakcheck_preload.so` (they must stay together), the model under
+`share/leakcheck/model/`, the man page under `share/man/man1/` and the docs
+under `share/doc/leakcheck/`. The model is looked for next to the project root,
+at the configured prefix, and beside the binary (`bin/../share/leakcheck/model`),
+so an unpacked archive works wherever it is put. Release archives for Linux
+x86_64 and aarch64, macOS arm64 and x86_64, and Windows x86_64 are built from a
+`v*` tag, with `SHA256SUMS` and a build-provenance attestation.
+
 On Windows, see "Windows" below: `.\build-windows.ps1` needs only MinGW-w64.
 
 CTest runs two kinds of tests. The unit tests (`tests/unit`, built as
@@ -225,6 +238,7 @@ Example:
 | `--ai-model <file>` | The model to use instead of `model/pe-malware.ai` |
 | `--ai-threshold <0..1>` | Score above which `--ai` calls a file malware; default: the threshold the model was exported with |
 | `-j, --jobs <n>` | `scan` and `ai-features`: how many files are read (and scanned) at the same time, 1-256 (default: one per CPU). The output is the same, in file order, for any number; on 16 CPUs a 650-file, 85 MB tree took 1.4 s with one thread and 0.26 s with all (3.2 s and 0.76 s with `--malware`), and the 6,149 programs in `System32` take a minute instead of six |
+| `-V, --version` | The release, the commit it was built from, the build type, the platform, and the classifier it would load: its file, tree count and threshold. The first line is what a bug report needs |
 | `--show-reachable` | Also list blocks still reachable at exit |
 | `--no-leak-check` | Skip the leak checks at exit (memory and resources) |
 | `--guard-every <n>` | Give every n-th allocation its own pages with inaccessible guard pages, so use-after-free reads and overflows fault at the faulting instruction (0 = off). At most 2048 guarded blocks are live at once |

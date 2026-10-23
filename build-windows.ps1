@@ -87,7 +87,18 @@ Write-Host "compiling the runtime..."
 $rtObjs = Compile $runtime ($rtinc + @("-g", "-fno-exceptions", "-fno-rtti", "-fno-threadsafe-statics", "-fno-omit-frame-pointer")) "rt_"
 
 Link (Join-Path $Build "leakcheck_preload.dll") (@("-shared") + $rtObjs + @("-static-libgcc", "-nostdlib++"))
-$mainObj = Compile @("src/main.cpp") $inc "main_"
+# --version: the same three values CMake writes, from VERSION and git.
+$version = (Get-Content (Join-Path $src "VERSION") -Raw).Trim()
+$hash = "unknown"
+try { $hash = (& git -C $src rev-parse --short HEAD 2>$null) } catch { }
+if (-not $hash) { $hash = "unknown" }
+@"
+#pragma once
+#define LEAKCHECK_VERSION "$version"
+#define LEAKCHECK_GIT_HASH "$hash"
+#define LEAKCHECK_BUILD_TYPE "release"
+"@ | Set-Content -Encoding ascii (Join-Path $Build "leakcheck_version.h")
+$mainObj = Compile @("src/main.cpp") ($inc + @("-I" + $Build)) "main_"
 # the manifest that makes leakcheck.exe's strings UTF-8 (a user name with a dotless i, say)
 $windres = $Cxx -replace "g\+\+(\.exe)?$", "windres"
 $rcObj = Join-Path $obj "leakcheck_rc.o"

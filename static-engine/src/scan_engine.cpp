@@ -10,7 +10,12 @@
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
-#if defined(__linux__)
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#elif defined(__APPLE__)
+#include <mach-o/dyld.h>
+#else
 #include <unistd.h>
 #endif
 #include <exception>
@@ -141,24 +146,55 @@ bool collect_files(const std::string &target_text, std::vector<std::string> *fil
     return true;
 }
 
-// Where the model is when --ai-model is not given: next to the project root or
-// next to the leakcheck binary (build/leakcheck -> ../model).
+// The directory the running binary is in, on every platform the tool ships
+// for. Used to find the model and the preload library in an installed tree.
+std::string executable_dir() {
+#if defined(__linux__)
+    char buf[4096];
+    const ssize_t n = readlink("/proc/self/exe", buf, sizeof buf - 1);
+    if (n <= 0)
+        return {};
+    buf[n] = 0;
+    return fs::path(buf).parent_path().generic_string();
+#elif defined(_WIN32)
+    char buf[4096];
+    const DWORD n = GetModuleFileNameA(nullptr, buf, sizeof buf);
+    if (n == 0 || n >= sizeof buf)
+        return {};
+    return fs::path(std::string(buf, n)).parent_path().generic_string();
+#elif defined(__APPLE__)
+    char buf[4096];
+    uint32_t size = sizeof buf;
+    if (_NSGetExecutablePath(buf, &size) != 0)
+        return {};
+    std::error_code ec;
+    const fs::path real = fs::canonical(fs::path(buf), ec);
+    return (ec ? fs::path(buf) : real).parent_path().generic_string();
+#else
+    return {};
+#endif
+}
+
+// Where the model is when --ai-model is not given: next to the project root, at
+// the path the build was configured with, or in an installed tree next to the
+// binary (bin/leakcheck -> ../share/leakcheck/model).
 std::string default_model_path() {
     std::error_code ec;
     if (fs::is_regular_file("model/pe-malware.ai", ec))
         return "model/pe-malware.ai";
-#if defined(__linux__)
-    char buf[4096];
-    const ssize_t n = readlink("/proc/self/exe", buf, sizeof buf - 1);
-    if (n > 0) {
-        buf[n] = 0;
-        const fs::path dir = fs::path(buf).parent_path();
+#ifdef LEAKCHECK_MODEL_PATH
+    if (fs::is_regular_file(LEAKCHECK_MODEL_PATH, ec))
+        return LEAKCHECK_MODEL_PATH;
+#endif
+    const std::string self = executable_dir();
+    if (!self.empty()) {
+        const fs::path dir(self);
         for (const fs::path &candidate :
-             {dir / "model/pe-malware.ai", dir.parent_path() / "model/pe-malware.ai"})
+             {dir / "model/pe-malware.ai", dir.parent_path() / "model/pe-malware.ai",
+              dir.parent_path() / "share/leakcheck/model/pe-malware.ai"})
             if (fs::is_regular_file(candidate, ec))
                 return candidate.generic_string();
     }
-#endif
     return {};
 }
 
@@ -385,4 +421,20 @@ int run_ai_features(const Command &command) {
                  "resource-only image(s) left out)\n",
                  judged.load(), read.load(), no_code.load());
     return 0;
+}
+
+// What the version line reports about the classifier: the file it finds, and
+// the numbers from its header that make a bug report reproducible.
+std::string model_description() {
+    const std::string path = default_model_path();
+    if (path.empty())
+        return {};
+    lcscan::AiModel model;
+    std::string error;
+    if (!model.load(path, &error))
+        return path + " (will not load: " + error + ")";
+    char threshold[32];
+    std::snprintf(threshold, sizeof threshold, "%.2f", model.threshold);
+    return path + " (" + std::to_string(model.trees.size()) + " trees, " +
+           std::to_string(model.features) + " features, threshold " + threshold + ")";
 }

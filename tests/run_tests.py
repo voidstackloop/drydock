@@ -115,6 +115,17 @@ def cli_usage_errors():
 
 
 @test("cli")
+def cli_version_names_the_build():
+    p = run(["--version"])
+    expect(p.returncode == 0, f"exit {p.returncode}: {p.stderr}")
+    first = p.stdout.splitlines()[0]
+    expect(first.startswith("leakcheck "), first)
+    expect("0.0.0-dev" not in first, f"the build did not generate its version: {first}")
+    expect("classifier:" in p.stdout, p.stdout)
+    expect(p.stdout == run(["-V"]).stdout, "-V and --version must agree")
+
+
+@test("cli")
 @posix_only
 def cli_arguments_after_program_are_its_own():
     # Even options leakcheck also has, and a "--" of the program's own.

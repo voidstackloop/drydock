@@ -1,0 +1,73 @@
+name: Build and test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build python3
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_C_FLAGS=-Werror -DCMAKE_CXX_FLAGS=-Werror
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Unit tests and the command-line suites
+        run: ctest --test-dir build --output-on-failure
+      - name: Graded evaluation
+        run: python3 eval/run_eval.py --build build --out "$RUNNER_TEMP/RESULTS.md"
+      - name: Install and identify
+        env:
+          STAGE: ${{ runner.temp }}/stage
+        run: |
+          cmake --install build --prefix "$STAGE"
+          "$STAGE/bin/leakcheck" --version | tee version.txt
+          grep -q 'classifier: .*pe-malware\.ai' version.txt
+
+  macos:
+    name: macos
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Ninja
+        run: brew install ninja
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_C_FLAGS=-Werror -DCMAKE_CXX_FLAGS=-Werror
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Unit tests and the command-line suites
+        run: ctest --test-dir build --output-on-failure
+
+  windows:
+    name: windows
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-python
+          path-type: inherit
+      - name: Build and test with MinGW
+        run: pwsh -File build-windows.ps1 -Test

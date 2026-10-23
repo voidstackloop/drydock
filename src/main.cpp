@@ -3,6 +3,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include "build_info.h"
 #include "command.h"
 #include "static_engine.h"
 #include "dynamic_engine.h"
@@ -41,6 +42,8 @@ static const char *usage =
     "      --ai-threshold <0..1>  score above which a file counts as malware (default: the\n"
     "                             threshold the model was exported with)\n"
     "  -j, --jobs <n>             scan/static/ai-features: files read at the same time\n                             (default: one per CPU)\n"
+    "  -V, --version              the version, the commit it was built from and the\n"
+    "                             classifier it would use\n"
     "  -h, --help                 show this help\n"
     "\n"
     "Dynamic mode:\n"
@@ -64,6 +67,17 @@ static bool parse_int(const char *text, int min, int max, int *out)
         return false;
     *out = int(v);
     return true;
+}
+
+// The three things a bug report needs: which release, which commit, which build
+// — and whether the classifier is there at all.
+static void print_version()
+{
+    printf("leakcheck %s (%s, %s, %s)\n", LEAKCHECK_VERSION, LEAKCHECK_GIT_HASH,
+           LEAKCHECK_BUILD_TYPE, LEAKCHECK_PLATFORM);
+    const std::string model = model_description();
+    printf("classifier: %s\n",
+           model.empty() ? "none found (scan --ai needs model/pe-malware.ai)" : model.c_str());
 }
 
 int main(int argc, char **argv)
@@ -120,6 +134,11 @@ int main(int argc, char **argv)
         else if (strcmp(arg, "-h") == 0 || strcmp(arg, "--help") == 0)
         {
             fprintf(stdout, "%s", usage);
+            return 0;
+        }
+        else if (strcmp(arg, "-V") == 0 || strcmp(arg, "--version") == 0)
+        {
+            print_version();
             return 0;
         }
         else if (strcmp(arg, "-o") == 0 || strcmp(arg, "--output") == 0)

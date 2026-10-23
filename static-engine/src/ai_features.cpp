@@ -298,14 +298,6 @@ bool ai_pe_features(const Bytes &b, std::vector<float> *out) {
     const bool dos_stub =
         find_text(b, "This program cannot be run in DOS mode", 0x400);
 
-    bool in_code = false;
-    for (const Section &s : sections) {
-        const uint32_t len = std::max(s.vsize, s.rawsize);
-        if (entry >= s.vaddr && entry < s.vaddr + len && (s.flags & 0x20000000) &&
-            (s.flags & 0x00000020)) // execute + code
-            in_code = true;
-    }
-
     out->assign({
         lg(whole),                                    // size_log
         float(entropy_of(b, 0, counted)),             // entropy
