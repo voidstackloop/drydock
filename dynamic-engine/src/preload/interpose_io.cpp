@@ -28,7 +28,7 @@ namespace {
 #if defined(__APPLE__)
 constexpr int kOCreat = 0x0200;       // O_CREAT
 constexpr int kCreatFlags = 0x0601;   // creat(): O_WRONLY|O_CREAT|O_TRUNC
-constexpr int kOTmpfile = 0;          // Darwin has no O_TMPFILE
+[[maybe_unused]] constexpr int kOTmpfile = 0; // Darwin has no O_TMPFILE
 constexpr int kCloseRangeCloexec = 0; // close_range is Linux
 constexpr int kFDupfd = 0;            // F_DUPFD
 constexpr int kFDupfdCloexec = 67;    // F_DUPFD_CLOEXEC

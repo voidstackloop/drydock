@@ -39,7 +39,9 @@ using ExitFn = void (*)(int);
 uint32_t g_init_state; // 0 = not started, 1 = running, 2 = done
 uint32_t g_scan_done;
 uint32_t g_finish_done;
-MainFn g_real_main;
+#if !defined(__APPLE__)
+MainFn g_real_main; // only the glibc start hook runs a main_hook
+#endif
 ExitFn g_real_exit;
 ExitFn g_real_uexit;
 
