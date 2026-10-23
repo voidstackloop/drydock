@@ -8,6 +8,12 @@ if(WIN32)
     enable_language(RC) # the manifest that makes leakcheck.exe's strings UTF-8
 endif()
 
+# GCC 11, which is what Ubuntu 22.04 ships, does not know -nostdlib++ and
+# refuses to link with it. The preload still does not use the C++ runtime (it is
+# built without exceptions and RTTI), so the flag is used only where it exists.
+include(CheckCXXCompilerFlag)
+check_cxx_compiler_flag("-nostdlib++" LEAKCHECK_NOSTDLIBPP)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -67,7 +73,10 @@ if(WIN32)
         dynamic-engine/src/preload dynamic-engine/src/win shared/include)
     target_compile_options(leakcheck_preload PRIVATE
         -Wall -Wextra -g -fno-exceptions -fno-rtti -fno-threadsafe-statics -fno-omit-frame-pointer)
-    target_link_options(leakcheck_preload PRIVATE -nostdlib++ -static-libgcc)
+    target_link_options(leakcheck_preload PRIVATE -static-libgcc)
+    if(LEAKCHECK_NOSTDLIBPP)
+        target_link_options(leakcheck_preload PRIVATE -nostdlib++)
+    endif()
 elseif(APPLE)
 add_library(leakcheck_preload SHARED ${lc_preload_unix}
     dynamic-engine/src/preload/darwin_interpose.c)
@@ -77,7 +86,10 @@ target_compile_options(leakcheck_preload PRIVATE
     -fno-exceptions -fno-rtti -fno-threadsafe-statics -fno-omit-frame-pointer
     -fvisibility=hidden -fvisibility-inlines-hidden
     -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free)
-target_link_options(leakcheck_preload PRIVATE -dynamiclib -nostdlib++)
+target_link_options(leakcheck_preload PRIVATE -dynamiclib)
+if(LEAKCHECK_NOSTDLIBPP)
+    target_link_options(leakcheck_preload PRIVATE -nostdlib++)
+endif()
 else()
 # The runtime injected into the target with LD_PRELOAD. It is the target's
 # malloc, so it must not depend on the C++ runtime or on exceptions.
@@ -91,7 +103,10 @@ target_compile_options(leakcheck_preload PRIVATE
     -fno-exceptions -fno-rtti -fno-threadsafe-statics -fno-omit-frame-pointer
     -fvisibility=hidden -fvisibility-inlines-hidden
     -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free)
-target_link_options(leakcheck_preload PRIVATE -nostdlib++ -Wl,--as-needed -Wl,-z,defs)
+target_link_options(leakcheck_preload PRIVATE -Wl,--as-needed -Wl,-z,defs)
+if(LEAKCHECK_NOSTDLIBPP)
+    target_link_options(leakcheck_preload PRIVATE -nostdlib++)
+endif()
 target_link_libraries(leakcheck_preload PRIVATE ${CMAKE_DL_LIBS})
 endif()
 
