@@ -1,3 +1,9 @@
+// The macOS SDK hides the deprecated ucontext routines (used for the saved
+// signal context) behind _XOPEN_SOURCE. It has to come before any include.
+#if defined(__APPLE__) && !defined(_XOPEN_SOURCE)
+#define _XOPEN_SOURCE 700
+#endif
+
 #include "guard.h"
 #include "protocol.h"
 #include "report.h"

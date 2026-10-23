@@ -25,6 +25,7 @@ $inc = @("static-engine/include", "dynamic-engine/include", "reporter/include", 
 $rtinc = @("dynamic-engine/src/preload", "dynamic-engine/src/win", "shared/include") | ForEach-Object { "-I" + (P $_) }
 
 $core = "static-engine/src/analyzer.cpp", "static-engine/src/lexer.cpp", "static-engine/src/parser.cpp",
+        "static-engine/src/ai_features.cpp", "static-engine/src/ai_model.cpp",
         "static-engine/src/malware_scan.cpp", "static-engine/src/malware_table.cpp",
         "static-engine/src/scan.cpp", "static-engine/src/scan_engine.cpp", "static-engine/src/security.cpp",
         "static-engine/src/static_engine.cpp", "reporter/src/compose.cpp", "reporter/src/render_console.cpp", "reporter/src/render_json.cpp",
