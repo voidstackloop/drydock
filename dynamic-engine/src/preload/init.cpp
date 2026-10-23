@@ -133,6 +133,9 @@ void finish_report() {
     report::finish(st);
 }
 
+// Reached through the __libc_start_main hook, which macOS does not have (there
+// the interposer wraps main directly), so it only exists where it is called.
+#if !defined(__APPLE__)
 int main_hook(int argc, char **argv, char **envp) {
     behavior::started(argc, argv);
     int rc = g_real_main(argc, argv, envp);
@@ -140,6 +143,7 @@ int main_hook(int argc, char **argv, char **envp) {
     end_of_program_scan(lo);
     return rc;
 }
+#endif
 
 __attribute__((constructor(101))) void on_load() {
     ensure_init();

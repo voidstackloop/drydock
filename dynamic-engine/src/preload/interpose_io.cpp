@@ -616,8 +616,10 @@ LC_API void *LC_FN(readdir)(void *d) {
     return REAL(readdir)(d);
 }
 
-// Same libc address as readdir, different symbol.
-LC_API void *LC_FN(readdir64)(void *d) { return readdir(d); }
+// Same libc address as readdir, different symbol. It goes through the wrapper
+// so the closed-directory check is the same; this file includes no dirent.h to
+// declare readdir itself.
+LC_API void *LC_FN(readdir64)(void *d) { return LC_FN(readdir)(d); }
 
 LC_API void LC_FN(rewinddir)(void *d) {
     if (closed_dir(d, "rewinddir()"))
