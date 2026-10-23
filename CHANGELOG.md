@@ -20,5 +20,6 @@ First release.
 - Console, JSON and SARIF 2.1.0 reports; glob suppressions; exit status 2 on
   findings.
 - `--version`, `cmake --install`, a man page, and release archives for Linux
-  (x86_64, aarch64), macOS (arm64, x86_64) and Windows (x86_64) with SHA-256
-  checksums and build-provenance attestations.
+  (x86_64, aarch64) and Windows (x86_64) with SHA-256 checksums and
+  build-provenance attestations. macOS is absent until the injected runtime
+  builds there (see `docs/ROADMAP.md`, known issues).

@@ -176,8 +176,10 @@ and `bin/libleakcheck_preload.so` (they must stay together), the model under
 under `share/doc/leakcheck/`. The model is looked for next to the project root,
 at the configured prefix, and beside the binary (`bin/../share/leakcheck/model`),
 so an unpacked archive works wherever it is put. Release archives for Linux
-x86_64 and aarch64, macOS arm64 and x86_64, and Windows x86_64 are built from a
-`v*` tag, with `SHA256SUMS` and a build-provenance attestation.
+x86_64 and aarch64 and for Windows x86_64 are built from a `v*` tag, with
+`SHA256SUMS` and a build-provenance attestation; macOS joins them when the
+injected runtime compiles there (see the known issues in
+[docs/ROADMAP.md](ROADMAP.md)).
 
 On Windows, see "Windows" below: `.\build-windows.ps1` needs only MinGW-w64.
 

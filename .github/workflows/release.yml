@@ -1,5 +1,8 @@
 name: Release
 
+# macOS archives are absent until the preload compiles on Darwin (see
+# docs/ROADMAP.md, known issues). Everything else here is platform-independent.
+
 # A tag publishes. The manual run builds exactly the same archives without
 # creating a release, so the packaging can be tested before the first tag.
 on:
@@ -56,46 +59,6 @@ jobs:
           name: linux-aarch64
           path: leakcheck-*.tar.gz
 
-  macos-arm64:
-    runs-on: macos-15
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v7
-      - run: brew install ninja
-      - name: Build and package
-        run: |
-          set -euo pipefail
-          version=$(cat VERSION)
-          name="leakcheck-$version-macos-arm64"
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLEAKCHECK_BUILD_TESTS=OFF
-          cmake --build build --parallel
-          cmake --install build --prefix "$PWD/stage/$name"
-          tar -C stage -czf "$name.tar.gz" "$name"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: macos-arm64
-          path: leakcheck-*.tar.gz
-
-  macos-x86_64:
-    runs-on: macos-15-intel
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v7
-      - run: brew install ninja
-      - name: Build and package
-        run: |
-          set -euo pipefail
-          version=$(cat VERSION)
-          name="leakcheck-$version-macos-x86_64"
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DLEAKCHECK_BUILD_TESTS=OFF
-          cmake --build build --parallel
-          cmake --install build --prefix "$PWD/stage/$name"
-          tar -C stage -czf "$name.tar.gz" "$name"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: macos-x86_64
-          path: leakcheck-*.tar.gz
-
   windows-x86_64:
     runs-on: windows-latest
     timeout-minutes: 30
@@ -126,7 +89,7 @@ jobs:
           path: leakcheck-*.zip
 
   release:
-    needs: [linux-x86_64, linux-aarch64, macos-arm64, macos-x86_64, windows-x86_64]
+    needs: [linux-x86_64, linux-aarch64, windows-x86_64]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

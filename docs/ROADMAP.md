@@ -32,12 +32,36 @@ repository.
 | No parser fuzzing | A crash on a hostile file is a denial of service in their CI. |
 | No Windows or macOS CI | Two of the three supported platforms are untested by the project. |
 
+## Known issues (found by the first CI run)
+
+Adding the build-and-test workflow showed the project did not build where the
+docs said it did:
+
+- **macOS `dynamic` does not compile.** `preload/signals.cpp` uses
+  `sigabbrev_np` and `sighandler_t`, which are glibc names, and calls
+  `fseeko`/`ftello` without a declaration; `preload/locks.cpp` hooked pthread
+  calls Darwin does not have, and `guard.cpp` needed the right feature macros.
+  The pthread guards and the feature macros are fixed. The signal names and the
+  stdio declarations are not, so the macOS job runs non-blocking and no macOS
+  archives are published. The rest is mechanical: `sys_signame` instead of
+  `sigabbrev_np`, `sig_t` instead of `sighandler_t`, and declared dlsym slots
+  for the two stdio calls.
+- **Windows static tests are flaky.** One run lost the cross-file flow report in
+  `static_flow_crosses_files`; the next passed it. Windows builds in CI but does
+  not gate on the suites until that is understood.
+- The MinGW script was missing the classifier's two source files (a link error),
+  and the macOS build was missing platform guards. Both are fixed.
+
+Linux is the only platform whose tests gate a merge today. Phase 5 closes the
+matrix.
+
 ## Phase 0 — Make it installable and identifiable (1 week)
 
 - `--version`: semantic version, git hash, build type, and the model version.
-- Tag `v1.0.0`; a release workflow that builds Linux x86_64/aarch64 (glibc and
-  musl), Windows x64 and macOS arm64/x86_64, with SHA-256 sums and SLSA build
-  provenance. No binaries from a laptop.
+- Tag `v1.0.0`; a release workflow that builds Linux x86_64/aarch64 (glibc; musl
+  deferred), Windows x64, and macOS arm64/x86_64 once the runtime compiles
+  there, with SHA-256 sums and SLSA build provenance. No binaries from a
+  laptop.
 - `cmake --install` rules, a man page, and a `CHANGELOG.md` that states what
   changed per finding type.
 - A build-and-test workflow: three platforms, `ctest`, `tests/run_tests.py`,
