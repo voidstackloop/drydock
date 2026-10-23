@@ -355,8 +355,10 @@ template <class F> F real(F &slot, const char *name) {
 #define SLOT(name) decltype(&::name) real_##name
 SLOT(pthread_mutex_lock);
 SLOT(pthread_mutex_trylock);
-SLOT(pthread_mutex_timedlock);
-SLOT(pthread_mutex_clocklock);
+#if !defined(__APPLE__)
+SLOT(pthread_mutex_timedlock);   // POSIX, but Darwin never implemented it
+SLOT(pthread_mutex_clocklock);   // glibc extension
+#endif
 SLOT(pthread_mutex_unlock);
 SLOT(pthread_mutex_init);
 SLOT(pthread_mutex_destroy);
@@ -366,19 +368,23 @@ SLOT(pthread_rwlock_tryrdlock);
 SLOT(pthread_rwlock_trywrlock);
 SLOT(pthread_rwlock_timedrdlock);
 SLOT(pthread_rwlock_timedwrlock);
-SLOT(pthread_rwlock_clockrdlock);
+#if !defined(__APPLE__)
+SLOT(pthread_rwlock_clockrdlock); // glibc extension
 SLOT(pthread_rwlock_clockwrlock);
+#endif
 SLOT(pthread_rwlock_unlock);
 SLOT(pthread_rwlock_init);
 SLOT(pthread_rwlock_destroy);
-SLOT(pthread_spin_lock);
+#if !defined(__APPLE__)
+SLOT(pthread_spin_lock); // Darwin has no spin locks
 SLOT(pthread_spin_trylock);
 SLOT(pthread_spin_unlock);
 SLOT(pthread_spin_init);
 SLOT(pthread_spin_destroy);
+SLOT(pthread_cond_clockwait);
+#endif
 SLOT(pthread_cond_wait);
 SLOT(pthread_cond_timedwait);
-SLOT(pthread_cond_clockwait);
 
 bool tracking() {
     if (tl_in_hook)
@@ -681,6 +687,7 @@ LC_API int LC_FN(pthread_mutex_trylock)(pthread_mutex_t *m) noexcept {
                    [m] { return REAL(pthread_mutex_trylock)(m); });
 }
 
+#if !defined(__APPLE__)
 LC_API int LC_FN(pthread_mutex_timedlock)(pthread_mutex_t *m,
                                    const struct timespec *until) noexcept {
     destroyed(m, kLockDestroyed);
@@ -695,6 +702,7 @@ LC_API int LC_FN(pthread_mutex_clocklock)(pthread_mutex_t *m, clockid_t clock,
         return REAL(pthread_mutex_clocklock)(m, clock, until);
     });
 }
+#endif
 
 LC_API int LC_FN(pthread_mutex_unlock)(pthread_mutex_t *m) noexcept {
     if (!destroyed(m, "unlocks a mutex that was destroyed"))
@@ -760,6 +768,7 @@ LC_API int LC_FN(pthread_rwlock_timedwrlock)(pthread_rwlock_t *l,
                    [=] { return REAL(pthread_rwlock_timedwrlock)(l, until); });
 }
 
+#if !defined(__APPLE__)
 LC_API int LC_FN(pthread_rwlock_clockrdlock)(pthread_rwlock_t *l, clockid_t clock,
                                       const struct timespec *until) noexcept {
     return bounded(uintptr_t(l), LC_PC, true, true, LockKind::Read, [=] {
@@ -773,6 +782,7 @@ LC_API int LC_FN(pthread_rwlock_clockwrlock)(pthread_rwlock_t *l, clockid_t cloc
         return REAL(pthread_rwlock_clockwrlock)(l, clock, until);
     });
 }
+#endif
 
 LC_API int LC_FN(pthread_rwlock_unlock)(pthread_rwlock_t *l) noexcept {
     return unlocked(uintptr_t(l), REAL(pthread_rwlock_unlock)(l));
@@ -858,6 +868,7 @@ LC_API int LC_FN(pthread_cond_timedwait)(pthread_cond_t *c, pthread_mutex_t *m,
     return REAL(pthread_cond_timedwait)(c, m, until);
 }
 
+#if !defined(__APPLE__)
 LC_API int LC_FN(pthread_cond_clockwait)(pthread_cond_t *c, pthread_mutex_t *m,
                                   clockid_t clock,
                                   const struct timespec *until) {
@@ -865,3 +876,4 @@ LC_API int LC_FN(pthread_cond_clockwait)(pthread_cond_t *c, pthread_mutex_t *m,
         before_wait(uintptr_t(m));
     return REAL(pthread_cond_clockwait)(c, m, clock, until);
 }
+#endif
