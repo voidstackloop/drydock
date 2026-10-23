@@ -24,6 +24,13 @@
 namespace lc {
 namespace {
 
+#if defined(__APPLE__)
+// libc's __exit: the call that does not run atexit handlers, which is what this
+// file is. A language-linkage declaration is only legal at namespace scope, so
+// it sits here rather than inside raw_exit (clang enforces that; gcc does not).
+extern "C" __attribute__((noreturn)) void lc_sys_exit(int) __asm("__exit");
+#endif
+
 using MainFn = int (*)(int, char **, char **);
 using StartMainFn = int (*)(MainFn, int, char **, void (*)(), void (*)(),
                             void (*)(), void *);
@@ -166,7 +173,6 @@ __attribute__((destructor(101))) void on_unload() {
 
 [[noreturn]] void raw_exit(int status) {
 #if defined(__APPLE__)
-    extern "C" __attribute__((noreturn)) void lc_sys_exit(int) __asm("__exit");
     lc_sys_exit(status);
 #else
     syscall(SYS_exit_group, status);
