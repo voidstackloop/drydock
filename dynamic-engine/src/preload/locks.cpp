@@ -366,9 +366,9 @@ SLOT(pthread_rwlock_rdlock);
 SLOT(pthread_rwlock_wrlock);
 SLOT(pthread_rwlock_tryrdlock);
 SLOT(pthread_rwlock_trywrlock);
-SLOT(pthread_rwlock_timedrdlock);
-SLOT(pthread_rwlock_timedwrlock);
 #if !defined(__APPLE__)
+SLOT(pthread_rwlock_timedrdlock); // optional in POSIX; Darwin omits it
+SLOT(pthread_rwlock_timedwrlock);
 SLOT(pthread_rwlock_clockrdlock); // glibc extension
 SLOT(pthread_rwlock_clockwrlock);
 #endif
@@ -756,6 +756,7 @@ LC_API int LC_FN(pthread_rwlock_trywrlock)(pthread_rwlock_t *l) noexcept {
                    [l] { return REAL(pthread_rwlock_trywrlock)(l); });
 }
 
+#if !defined(__APPLE__)
 LC_API int LC_FN(pthread_rwlock_timedrdlock)(pthread_rwlock_t *l,
                                       const struct timespec *until) noexcept {
     return bounded(uintptr_t(l), LC_PC, true, true, LockKind::Read,
@@ -767,6 +768,7 @@ LC_API int LC_FN(pthread_rwlock_timedwrlock)(pthread_rwlock_t *l,
     return bounded(uintptr_t(l), LC_PC, true, false, LockKind::Write,
                    [=] { return REAL(pthread_rwlock_timedwrlock)(l, until); });
 }
+#endif
 
 #if !defined(__APPLE__)
 LC_API int LC_FN(pthread_rwlock_clockrdlock)(pthread_rwlock_t *l, clockid_t clock,
