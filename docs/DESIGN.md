@@ -1086,9 +1086,9 @@ ELF, a PE, a Mach-O, a script (`#!`) and text apart. `scan_file` then:
   `downloads_into_interpreter` / `imitates` rules as the dynamic engine
   (`text_checks`), so the two modes agree. A text file that is not a script
   by its extension is documentation and is not read for commands;
-* for an ELF or a PE, looks at program headers, section names and imported
-  names (`elf_checks`, `pe_checks`, `api_checks`) and at the entropy of the
-  first 4 MB.
+* for an ELF or a PE, looks at program headers, section names and the import
+  table (`elf_checks`, `pe_checks`, `api_checks`), at an executable section's
+  own entropy, and at the entropy of the first 4 MB.
 
 One finding per type per file; further hits of that type are a count ("and N
 more of the same kind"). `scan_engine` adds one more: a file whose name is a

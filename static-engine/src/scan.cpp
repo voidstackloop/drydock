@@ -6,8 +6,10 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <cstdint>
 #include <cstring>
+#include <initializer_list>
 #include <map>
 #include <set>
 #include <string_view>
@@ -526,38 +528,259 @@ void elf_checks(const Bytes &b, const std::string &path, Collector *c) {
 }
 
 // ---- PE ------------------------------------------------------------------------------
+//
+// The headers as a layout: where each section's bytes are, and where a relative
+// virtual address (what the directories hold) lands in the file. The checks read
+// the import table and the TLS directory from that, not from strings that happen
+// to be in the file.
 
-void pe_checks(const Bytes &b, Collector *c) {
+struct PeDir {
+    uint32_t rva = 0, size = 0;
+};
+
+struct PeSection {
+    char name[9] = {};
+    uint32_t vsize = 0, va = 0, rawsize = 0, rawptr = 0, flags = 0;
+};
+
+struct PeLayout {
+    bool ok = false;
+    bool plus = false; // PE32+ (64-bit)
+    size_t opt = 0;
+    uint32_t headers = 0; // SizeOfHeaders: an RVA below it is already a file offset
+    std::vector<PeSection> sections;
+    PeDir dirs[16];
+
+    PeDir dir(int i) const { return i >= 0 && i < 16 ? dirs[i] : PeDir{}; }
+
+    size_t offset(uint32_t rva) const {
+        if (rva < headers)
+            return rva;
+        for (const PeSection &s : sections)
+            if (rva >= s.va && rva - s.va < s.rawsize)
+                return size_t(s.rawptr) + (rva - s.va);
+        return 0;
+    }
+};
+
+PeLayout pe_layout(const Bytes &b) {
+    PeLayout p;
+    if (b.size() < 64 || b[0] != 'M' || b[1] != 'Z')
+        return p;
     const size_t pe = u32(b, 0x3c);
-    if (pe + 24 > b.size())
-        return;
-    const uint16_t sections = u16(b, pe + 6), optsize = u16(b, pe + 20);
+    if (pe + 24 > b.size() || memcmp(b.data() + pe, "PE\0\0", 4) != 0)
+        return p;
+    const uint16_t nsec = u16(b, pe + 6), optsize = u16(b, pe + 20);
     const size_t opt = pe + 24;
-    const uint32_t entry = u32(b, opt + 16);
-    static const char *const kPackers[] = {"UPX0", "UPX1", "UPX2", ".aspack", ".adata", ".themida",
-                                           ".vmp0", ".vmp1", ".petite", ".nsp0", ".MPRESS1",
-                                           ".MPRESS2", ".enigma1"};
-    for (uint16_t i = 0; i < sections && i < 96; ++i) {
+    if (optsize < 64 || opt + optsize > b.size())
+        return p;
+    const uint16_t magic = u16(b, opt);
+    p.plus = magic == 0x20b;
+    if (!p.plus && magic != 0x10b)
+        return p;
+    p.ok = true;
+    p.opt = opt;
+    p.headers = u32(b, opt + 60);
+    const size_t dd = opt + (p.plus ? 112 : 96);
+    const size_t count = std::min<size_t>(u32(b, opt + (p.plus ? 108 : 92)), 16);
+    for (size_t i = 0; i < count && dd + (i + 1) * 8 <= opt + optsize; ++i) {
+        p.dirs[i].rva = u32(b, dd + i * 8);
+        p.dirs[i].size = u32(b, dd + i * 8 + 4);
+    }
+    for (uint16_t i = 0; i < nsec && i < 96; ++i) {
         const size_t s = opt + optsize + size_t(i) * 40;
         if (s + 40 > b.size())
             break;
-        char name[9] = {};
-        memcpy(name, b.data() + s, 8);
-        const uint32_t vsize = u32(b, s + 8), va = u32(b, s + 12), flags = u32(b, s + 36);
-        for (const char *p : kPackers)
-            if (!strcmp(name, p))
+        PeSection sec;
+        memcpy(sec.name, b.data() + s, 8);
+        sec.vsize = u32(b, s + 8);
+        sec.va = u32(b, s + 12);
+        sec.rawsize = u32(b, s + 16);
+        sec.rawptr = u32(b, s + 20);
+        sec.flags = u32(b, s + 36);
+        p.sections.push_back(sec);
+    }
+    return p;
+}
+
+// The API names the import table asks for, lower case, and how many it leaves as
+// ordinals. A name chosen at run time (LoadLibrary/GetProcAddress) is not in it.
+struct PeImports {
+    std::set<std::string> funcs;
+    std::vector<std::string> dlls;
+    size_t named = 0, ordinals = 0;
+};
+
+PeImports pe_imports(const Bytes &b, const PeLayout &p) {
+    PeImports out;
+    const PeDir imp = p.dir(1);
+    const size_t at = imp.rva ? p.offset(imp.rva) : 0;
+    if (!at || at + 20 > b.size())
+        return out;
+    for (size_t d = 0; d < 256; ++d) {
+        const size_t desc = at + d * 20;
+        if (desc + 20 > b.size())
+            break;
+        const uint32_t lookup = u32(b, desc), names = u32(b, desc + 12),
+                       iat = u32(b, desc + 16);
+        if (!names && !lookup && !iat)
+            break; // the zero descriptor that ends the table
+        const size_t name_at = names ? p.offset(names) : 0;
+        if (name_at && name_at < b.size()) {
+            const char *s = b.c_str() + name_at;
+            size_t n = 0;
+            while (name_at + n < b.size() && n < 255 && s[n])
+                ++n;
+            out.dlls.push_back(lower(std::string_view(s, n)));
+        }
+        const size_t thunk = (lookup ? lookup : iat) ? p.offset(lookup ? lookup : iat) : 0;
+        if (!thunk)
+            continue;
+        const size_t width = p.plus ? 8 : 4;
+        for (size_t k = 0; k < 4096; ++k) {
+            const size_t here = thunk + k * width;
+            if (here + width > b.size())
+                break;
+            const uint64_t value = p.plus ? u64(b, here) : u32(b, here);
+            if (!value)
+                break;
+            const bool ordinal = p.plus ? (value >> 63) != 0 : (value & 0x80000000u) != 0;
+            if (ordinal) {
+                ++out.ordinals;
+                continue;
+            }
+            const size_t api = p.offset(uint32_t(value));
+            if (!api || api + 2 >= b.size())
+                continue;
+            const char *s = b.c_str() + api + 2; // past the two-byte hint
+            size_t n = 0;
+            while (api + 2 + n < b.size() && n < 255 && s[n])
+                ++n;
+            if (!n)
+                continue;
+            ++out.named;
+            out.funcs.insert(lower(std::string_view(s, n)));
+        }
+    }
+    return out;
+}
+
+// How random a range of bytes looks, 0 to 8 bits per byte.
+double entropy_of(const Bytes &b, size_t from, size_t len) {
+    if (from >= b.size())
+        return 0;
+    len = std::min(len, b.size() - from);
+    if (!len)
+        return 0;
+    size_t count[256] = {};
+    for (size_t i = 0; i < len; ++i)
+        ++count[uint8_t(b[from + i])];
+    double h = 0;
+    for (size_t k : count)
+        if (k) {
+            const double p = double(k) / double(len);
+            h -= p * std::log2(p);
+        }
+    return h;
+}
+
+std::string entropy_text(double h) {
+    char buf[16];
+    std::snprintf(buf, sizeof buf, "%.2f", h);
+    return buf;
+}
+
+void pe_checks(const Bytes &b, Collector *c) {
+    const PeLayout p = pe_layout(b);
+    if (!p.ok)
+        return;
+    const PeImports imp = pe_imports(b, p);
+    const uint32_t entry = u32(b, p.opt + 16);
+    static const char *const kPackers[] = {"UPX0", "UPX1", "UPX2", ".aspack", ".adata", ".themida",
+                                           ".vmp0", ".vmp1", ".petite", ".nsp0", ".MPRESS1",
+                                           ".MPRESS2", ".enigma1"};
+    for (const PeSection &s : p.sections) {
+        for (const char *packer : kPackers)
+            if (!strcmp(s.name, packer))
                 c->add(lcproto::kSuspiciousBin,
-                       std::string("it has a section named ") + name +
+                       std::string("it has a section named ") + s.name +
                            ", the mark of a packer: the real code is compressed or encrypted "
                            "inside, which hides it from scanners");
-        if ((flags & 0x20000000) && (flags & 0x80000000))
+        if ((s.flags & 0x20000000) && (s.flags & 0x80000000))
             c->add(lcproto::kSuspiciousBin,
-                   std::string("section ") + name + " is both writable and executable: it can "
+                   std::string("section ") + s.name + " is both writable and executable: it can "
                    "rewrite its own code, as packers and shell code do");
-        if (entry >= va && entry < va + vsize && (flags & 0x80000000) && !(flags & 0x20000000))
-            c->add(lcproto::kSuspiciousBin,
-                   "the entry point is in a writable data section");
+        if (entry >= s.va && entry < s.va + s.vsize && (s.flags & 0x80000000) &&
+            !(s.flags & 0x20000000))
+            c->add(lcproto::kSuspiciousBin, "the entry point is in a writable data section");
     }
+
+    // A TLS callback is code the loader runs before the entry point, which is
+    // where a packer unpacks itself. On its own it is ordinary: the C runtime of
+    // several compilers registers one in every program, so it is only reported
+    // beside packed code or on a program that imports nothing.
+    const PeDir tls = p.dir(9);
+    const size_t tls_at = tls.rva ? p.offset(tls.rva) : 0;
+    const size_t callbacks = tls_at + (p.plus ? 24 : 12);
+    bool tls_callback = false;
+    if (tls_at && callbacks + (p.plus ? 8 : 4) <= b.size())
+        tls_callback = (p.plus ? u64(b, callbacks) : u32(b, callbacks)) != 0;
+    const char *const kTlsClause =
+        ", and it registers a TLS callback: code that runs before the entry point, where an "
+        "unpacker does its work";
+
+    // Code that does not look like code: an executable section of real size whose
+    // bytes are close to random is compressed or encrypted, which is a packer's
+    // job. Resources and overlays are not looked at, as they are usually compressed.
+    double worst = 0;
+    const char *worst_name = nullptr;
+    for (const PeSection &s : p.sections) {
+        if (!(s.flags & 0x20000000) || s.rawsize < 2048)
+            continue;
+        const double e = entropy_of(b, s.rawptr, s.rawsize);
+        if (e > worst) {
+            worst = e;
+            worst_name = s.name;
+        }
+    }
+    if (worst_name && worst >= 7.2)
+        c->add(lcproto::kSuspiciousBin,
+               std::string("its ") + worst_name + " section looks random (entropy " +
+                   entropy_text(worst) +
+                   " of 8): the code is compressed or encrypted inside the program, as a "
+                   "packer leaves it" +
+                   (tls_callback ? kTlsClause : ""));
+
+    // What the imports say it can do. Each pair is a capability on its own; the
+    // strings of the same API names are checked separately, for a file whose
+    // import table a packer has removed.
+    auto has = [&imp](std::initializer_list<const char *> names) {
+        for (const char *n : names)
+            if (imp.funcs.count(n))
+                return true;
+        return false;
+    };
+    if (has({"urldownloadtofilea", "urldownloadtofilew"}) &&
+        has({"winexec", "shellexecutea", "shellexecutew"}))
+        c->add(lcproto::kDropper,
+               "it imports URLDownloadToFile and WinExec or ShellExecute: the calls that fetch "
+               "a file from the internet and start it, which is how a first stage installs the "
+               "rest of itself");
+    // Both halves are needed for the reading to mean anything: CredUnprotectData
+    // is how any program reads its own saved secret, CredEnumerate lists every
+    // saved one (as a stealer does); Remote Desktop and the sync clients read a
+    // named credential and do not enumerate.
+    if (has({"cryptunprotectdata"}) && has({"credenumeratew", "credenumeratea"}))
+        c->add(lcproto::kCredAccess,
+               "it imports CryptUnprotectData and CredEnumerate: the calls that decrypt and "
+               "walk every password saved on the machine");
+    if (imp.named > 0 && imp.named <= 8 && has({"loadlibrarya", "loadlibraryw", "loadlibraryexa",
+                                              "loadlibraryexw"}) &&
+        has({"getprocaddress"}))
+        c->add(lcproto::kSuspiciousBin,
+               "its import table names only " + std::to_string(imp.named) +
+                   " functions, among them LoadLibrary and GetProcAddress: everything else it "
+                   "calls is chosen at run time, so the table does not say what it does");
 }
 
 // ---- Mach-O ---------------------------------------------------------------------------

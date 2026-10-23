@@ -55,6 +55,107 @@ void put64(std::string &s, size_t at, uint64_t v) {
     put32(s, at + 4, uint32_t(v >> 32));
 }
 
+// A 32-bit PE with one .text section and a real import table naming `funcs`, so
+// the scanner reads a table instead of meeting the names as strings. `tls` adds
+// a TLS directory holding one callback.
+std::string pe_with_imports(const std::vector<std::string> &funcs, bool tls = false) {
+    std::string b(0x800, '\0');
+    b[0] = 'M';
+    b[1] = 'Z';
+    put32(b, 0x3c, 0x80);
+    b.replace(0x80, 4, std::string("PE\0\0", 4));
+    put16(b, 0x80 + 4, 0x14c); // i386
+    put16(b, 0x80 + 6, 1);     // one section
+    put16(b, 0x80 + 20, 0xe0); // optional header size
+    const size_t opt = 0x80 + 24;
+    put16(b, opt, 0x10b);        // PE32
+    put32(b, opt + 16, 0x1000);  // AddressOfEntryPoint
+    put32(b, opt + 32, 0x1000);  // SectionAlignment
+    put32(b, opt + 36, 0x200);   // FileAlignment
+    put32(b, opt + 56, 0x2000);  // SizeOfImage
+    put32(b, opt + 60, 0x200);   // SizeOfHeaders
+    put16(b, opt + 68, 2);       // GUI
+    put32(b, opt + 92, 16);      // NumberOfRvaAndSizes
+    put32(b, opt + 96 + 8, 0x1100); // import directory RVA
+    put32(b, opt + 96 + 12, 40);    // import directory size
+    if (tls) {
+        put32(b, opt + 96 + 9 * 8, 0x1500); // TLS directory RVA
+        put32(b, opt + 96 + 9 * 8 + 4, 24);
+    }
+    const size_t sec = opt + 0xe0;
+    b.replace(sec, 8, std::string(".text\0\0\0", 8));
+    put32(b, sec + 8, 0x600);       // VirtualSize
+    put32(b, sec + 12, 0x1000);     // VirtualAddress
+    put32(b, sec + 16, 0x600);      // SizeOfRawData
+    put32(b, sec + 20, 0x200);      // PointerToRawData
+    put32(b, sec + 36, 0x60000020); // code | read | execute
+    // .text maps RVA 0x1000 to file offset 0x200
+    put32(b, 0x300, 0x1140);      // OriginalFirstThunk
+    put32(b, 0x300 + 12, 0x1180); // DLL name
+    put32(b, 0x300 + 16, 0x1140); // FirstThunk
+    b.replace(0x380, 12, std::string("kernel32.dll", 12));
+    size_t name_at = 0x400;
+    for (size_t i = 0; i < funcs.size() && i < 8; ++i) {
+        put32(b, 0x340 + i * 4, uint32_t(0x1000 + (name_at - 0x200)));
+        b[name_at] = 0; // the two-byte hint
+        b[name_at + 1] = 0;
+        b.replace(name_at + 2, funcs[i].size(), funcs[i]);
+        name_at += 2 + funcs[i].size();
+        b[name_at] = 0;
+        name_at = (name_at + 4) & ~size_t(3);
+    }
+    if (tls) {
+        put32(b, 0x700 + 12, 0x1580); // AddressOfCallBacks
+        put32(b, 0x780, 0x1590);      // one callback
+    }
+    return b;
+}
+
+// One .text section whose bytes are close to random: what a packer leaves when
+// it compresses or encrypts the code.
+std::string pe_with_random_code(bool tls = false) {
+    std::string b(0xa00, '\0');
+    b[0] = 'M';
+    b[1] = 'Z';
+    put32(b, 0x3c, 0x80);
+    b.replace(0x80, 4, std::string("PE\0\0", 4));
+    put16(b, 0x80 + 4, 0x14c);
+    put16(b, 0x80 + 6, 1);
+    put16(b, 0x80 + 20, 0xe0);
+    const size_t opt = 0x80 + 24;
+    put16(b, opt, 0x10b);
+    put32(b, opt + 16, 0x1000);
+    put32(b, opt + 32, 0x1000);
+    put32(b, opt + 36, 0x200);
+    put32(b, opt + 56, 0x2000);
+    put32(b, opt + 60, 0x200);
+    put16(b, opt + 68, 2);
+    put32(b, opt + 92, 16);
+    if (tls) {
+        put32(b, opt + 96 + 9 * 8, 0x1500);
+        put32(b, opt + 96 + 9 * 8 + 4, 24);
+    }
+    const size_t sec = opt + 0xe0;
+    b.replace(sec, 8, std::string(".text\0\0\0", 8));
+    put32(b, sec + 8, 0x800);
+    put32(b, sec + 12, 0x1000);
+    put32(b, sec + 16, 0x800);
+    put32(b, sec + 20, 0x200);
+    put32(b, sec + 36, 0x60000020);
+    uint32_t x = 0x9e3779b9u;
+    for (size_t i = 0x200; i < b.size(); ++i) {
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        b[i] = char(x & 0xff);
+    }
+    if (tls) {
+        put32(b, 0x700 + 12, 0x1580);
+        put32(b, 0x780, 0x1590);
+    }
+    return b;
+}
+
 // A 64-bit little-endian ELF header with `phnum` program headers after it.
 std::string elf(uint16_t type, uint16_t phnum) {
     std::string b(64 + 56 * size_t(phnum), '\0');
@@ -454,6 +555,7 @@ TEST(scan_a_packed_windows_program) {
     pe.replace(0x80, 4, std::string("PE\0\0", 4));
     put16(pe, 0x80 + 6, 1);      // one section
     put16(pe, 0x80 + 20, 0xe0);  // optional header size
+    put16(pe, 0x80 + 24, 0x10b); // PE32
     const size_t section = 0x80 + 24 + 0xe0;
     pe.replace(section, 4, "UPX0");
     CHECK(says("/h/setup.exe", pe, "suspicious-binary", "section named UPX0"));
@@ -461,6 +563,40 @@ TEST(scan_a_packed_windows_program) {
     pe.replace(section, 8, std::string(".text\0\0\0", 8));
     CHECK(says("/h/setup.exe", pe, "suspicious-binary", "both writable and executable"));
     CHECK_EQ(kinds("/h/setup.exe", "MZ"), std::string(""));
+}
+
+TEST(scan_windows_imports_say_what_the_program_can_do) {
+    CHECK(says("/h/setup.exe", pe_with_imports({"URLDownloadToFileW", "ShellExecuteW"}),
+               "dropper", "URLDownloadToFile"));
+    CHECK(says("/h/steal.exe", pe_with_imports({"CryptUnprotectData", "CredEnumerateW"}),
+               "credential-access", "CredEnumerate"));
+    // reading one named credential is what Remote Desktop and the sync clients do
+    CHECK_EQ(kinds("/h/mstsc.exe", pe_with_imports({"CryptUnprotectData", "CredReadW"})),
+             std::string(""));
+    // a debugger imports the thread and memory calls too, so that pair proves nothing
+    CHECK_EQ(kinds("/h/dbg.exe", pe_with_imports({"GetThreadContext", "SetThreadContext",
+                                                  "WriteProcessMemory", "VirtualAllocEx",
+                                                  "QueueUserAPC"})),
+             std::string(""));
+    // an ordinary program's imports say nothing about what it does wrong
+    CHECK_EQ(kinds("/h/clean.exe", pe_with_imports({"CreateFileW", "ReadFile", "CloseHandle"})),
+             std::string(""));
+}
+
+TEST(scan_windows_program_that_resolves_its_calls_at_run_time) {
+    CHECK(says("/h/loader.exe", pe_with_imports({"LoadLibraryA", "GetProcAddress"}),
+               "suspicious-binary", "chosen at run time"));
+}
+
+TEST(scan_windows_tls_callback_runs_before_the_entry_point) {
+    // many compilers register one in every program, so on its own it says nothing
+    CHECK_EQ(kinds("/h/normal.exe", pe_with_imports({"CreateFileW"}, true)), std::string(""));
+    // beside packed code it is part of the picture
+    CHECK(says("/h/packed.exe", pe_with_random_code(true), "suspicious-binary", "TLS callback"));
+}
+
+TEST(scan_windows_code_that_does_not_look_like_code) {
+    CHECK(says("/h/packed.exe", pe_with_random_code(), "suspicious-binary", "looks random"));
 }
 
 TEST(scan_windows_apis_of_injection_and_key_logging) {

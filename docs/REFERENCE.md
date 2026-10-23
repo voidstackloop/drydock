@@ -637,8 +637,39 @@ that only a file can show:
 | `malware-signature` | The EICAR test string, a mining-pool address, the name of a known web shell, the text of a ransom note, or PHP that passes `$_POST`/`$_GET`/`$_REQUEST`/`$_COOKIE` to `eval`, `system`, `assert` or `base64_decode`, or PHP that runs code from an encoded string (`eval(base64_decode(...))`). EICAR is harmless: it exists so a scanner can be shown to find it. |
 | `disguised-executable` | The bytes are a Linux, Windows or macOS program, or a script (`#!`), and the name ends in `.pdf`, `.jpg`, `.doc`, `.txt` or another extension of something that is only read. |
 | `obfuscated-code` (warning) | A script decodes text and runs the result: `exec(base64.b64decode(...))`, `eval(atob(...))`, `eval(gzinflate(base64_decode(...)))`, `powershell -EncodedCommand`, or a line of thousands of characters that is nearly all base64. The decoder and the thing that runs must be within about a hundred characters of each other; a script that decodes data and never runs it is not reported. |
-| `suspicious-binary` | Packed (UPX and the other packer section names), bytes that look encrypted, a segment that is writable and executable (in an ELF, a PE section or a Mach-O segment), an executable stack, an entry point outside the code, a section table that was cut off, or a shared library other than libc that defines `readdir` or `getdents`. Some honest programs are packed; the finding says so. |
+| `suspicious-binary` | Packed (UPX and the other packer section names), bytes that look encrypted, an executable section whose own bytes look random, a segment that is writable and executable (in an ELF, a PE section or a Mach-O segment), an executable stack, an entry point outside the code, a section table that was cut off, a Windows import table that names almost nothing, or a shared library other than libc that defines `readdir` or `getdents`. Some honest programs are packed; the finding says so. |
 | `ai-classifier` (warning) | `--ai` only: a Windows program whose headers, sections, imports and strings the trained model scores above the threshold as malware. The message gives the score, the threshold, what the model was trained on, and says that it is a guess from the shape of the file and not a matched rule. See "The classifier" below. |
+
+A Windows program's import table is read as a table — which API names each DLL
+is asked for — and not as strings that happen to be in the file. Two pairs are
+a capability on their own: `URLDownloadToFile` together with `WinExec` or
+`ShellExecute` is `dropper` (fetch a file and start it), and
+`CryptUnprotectData` together with `CredEnumerate` is `credential-access`
+(decrypt and walk every password saved on the machine). `CredRead` alone is not
+reported: Remote Desktop and the sync clients read one named credential the
+same way. A table that names no more than eight functions and includes
+`LoadLibrary` and `GetProcAddress` is `suspicious-binary`: everything else the
+program calls is chosen at run time, so the table does not say what it does.
+The calls a debugger makes (`GetThreadContext`, `SetThreadContext`,
+`WriteProcessMemory`) are imported by debuggers, profilers and the .NET runtime
+too, so on their own they are not evidence of anything; the injection rule for
+those stays the string trio (`WriteProcessMemory`, `CreateRemoteThread`,
+`VirtualAllocEx`), which a program that is not an injection helper does not
+carry.
+
+An executable section of at least 2 KB whose bytes are close to random
+(entropy 7.2 of 8 or more) is `suspicious-binary` even when the file as a whole
+is not; the message names the section. A TLS callback — code the loader runs
+before the entry point, where an unpacker works — is added to that message and
+is not reported on its own: several compilers register one in every program.
+
+On the 7,758 normal programs of the training collection these checks added
+nine findings: eight are Microsoft code whose sections are obfuscated or
+compressed (two codecs, the software-protection service and its helpers, a
+media decoder, a driver), and the ninth is Quick Assist, which downloads and
+starts what it is told to. No import pair and no 64-bit program was reported.
+On the 3,327 malicious files they added 110 (`suspicious-binary`, mostly
+packed sections and tables that name only `LoadLibrary` and `GetProcAddress`).
 
 A name is judged too. `invoice.pdf.exe` and a name that contains a
 right-to-left override are `masquerade` even when the file is not a program.
