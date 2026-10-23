@@ -1,0 +1,9 @@
+# What CodeQL reads. The test corpora are input to leakcheck, not shipped code:
+# tests/dynamic/programs/* are deliberately broken programs that the dynamic
+# engine must report, eval/cases/* are deliberately vulnerable samples, and
+# tests/unit/* drives them from temporary paths. Analysing them fills the
+# security tab with the bugs the project exists to find.
+name: leakcheck
+paths-ignore:
+  - tests/**
+  - eval/**

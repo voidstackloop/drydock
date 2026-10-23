@@ -37,6 +37,7 @@ jobs:
           build-mode: ${{ matrix.build-mode }}
           # The default set plus the lower-precision security queries.
           queries: security-extended
+          config-file: ./.github/codeql/codeql-config.yml
 
       # CodeQL traces this build rather than guessing one: the project is CMake
       # and the preload library is a separate target.

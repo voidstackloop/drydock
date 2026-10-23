@@ -169,8 +169,11 @@ void load_config() {
         return;
     c.report_fd = 2;
     const char *path = env_str(kEnvReport);
-    if (path && strlen(path) < sizeof c.report_path)
-        strcpy(c.report_path, path);
+    if (path) {
+        const size_t n = strlen(path);
+        if (n < sizeof c.report_path)
+            memcpy(c.report_path, path, n + 1);
+    }
 }
 
 namespace {
