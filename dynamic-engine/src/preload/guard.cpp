@@ -1,6 +1,9 @@
 // The macOS SDK hides the deprecated ucontext routines (used for the saved
-// signal context) behind _XOPEN_SOURCE. It has to come before any include.
-#if defined(__APPLE__) && !defined(_XOPEN_SOURCE)
+// signal context) behind _XOPEN_SOURCE, and that in turn hides the BSD mmap
+// flags and madvise() this file needs, so ask for both. It has to come before
+// any include.
+#if defined(__APPLE__)
+#define _DARWIN_C_SOURCE 1
 #define _XOPEN_SOURCE 700
 #endif
 

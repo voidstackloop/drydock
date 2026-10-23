@@ -48,7 +48,9 @@ function Run-All($commands) {
         while ($running.Count -ge $Jobs) {
             $done = $running | Where-Object { $_.Proc.HasExited }
             if (-not $done) { Start-Sleep -Milliseconds 100; continue }
-            foreach ($d in $done) { Finish $d; $running = $running | Where-Object { $_ -ne $d } }
+            # @() keeps a one-element list a list: without it $running becomes a
+            # single object and the next += has no op_Addition on PowerShell 7.
+            foreach ($d in $done) { Finish $d; $running = @($running | Where-Object { $_ -ne $d }) }
         }
         $log = [IO.Path]::GetTempFileName()
         $p = Start-Process -FilePath $c.Exe -ArgumentList $c.Args -NoNewWindow -PassThru -RedirectStandardError $log
