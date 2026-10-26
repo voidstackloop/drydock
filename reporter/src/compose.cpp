@@ -63,7 +63,7 @@ void add_composite_findings(Report &r) {
             f.pid = base.pid;
             f.tid = base.tid;
             f.access = base.access;
-            f.key = std::to_string(std::hash<std::string>{}(std::string(type) + "|" + group + "|" + why));
+            f.key = std::to_string(lcreport::stable_hash(std::string(type) + "|" + group + "|" + why));
             added.push_back(std::move(f));
             t.insert(type);
         };

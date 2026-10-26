@@ -14,7 +14,9 @@
 #include <dlfcn.h>
 #include <sys/syscall.h>
 
+#if !defined(__APPLE__)
 extern "C" long syscall(long number, ...);
+#endif
 #if defined(__APPLE__)
 // Bound to libSystem, not to lc_read/lc_write: those are the wrappers.
 extern "C" long lc_sys_read(int, void *, unsigned long) __asm("_read");

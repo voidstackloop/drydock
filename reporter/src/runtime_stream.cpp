@@ -73,7 +73,7 @@ bool parse_runtime_stream(const std::string &path, Report &out) {
             Process &p = process(out, uint32_t(to_u64(f["pid"])));
             p.exe = f["exe"];
             headed.insert(p.pid);
-        } else if (tag == 'M') {
+        } else if (tag == 'M' && line.size() > 2) {
             std::istringstream ss(line.substr(2));
             uint32_t pid = 0, id = 0;
             ss >> pid >> id;

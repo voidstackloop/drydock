@@ -1,6 +1,8 @@
 #include "static_engine.h"
 #include "analyzer.h"
+#include "cache.h"
 #include "command.h"
+#include "config.h"
 #include "lexer.h"
 #include "parser.h"
 #include "report.h"
@@ -9,9 +11,12 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <thread>
 #include <functional>
 #include <set>
@@ -25,14 +30,63 @@ const std::set<std::string> kSourceExts = {".c",   ".cc",  ".cpp", ".cxx",
                                            ".c++", ".h",   ".hh",  ".hpp",
                                            ".hxx", ".inl", ".ipp"};
 
+inline std::string normalize_generic_path(const fs::path &p) {
+    std::string s = p.lexically_normal().generic_string();
+#ifdef _WIN32
+    const std::string orig = p.string();
+    if ((orig.rfind("\\\\", 0) == 0 || orig.rfind("//", 0) == 0) &&
+        s.rfind("//", 0) != 0 && s.rfind("/", 0) == 0) {
+        s = "/" + s;
+    }
+#endif
+    return s;
+}
+
+inline std::string to_absolute_generic_path(const fs::path &p) {
+#ifdef _WIN32
+    std::string s = p.string();
+    if (s.rfind("\\\\", 0) == 0 || s.rfind("//", 0) == 0) {
+        for (char &c : s) {
+            if (c == '\\')
+                c = '/';
+        }
+        return s;
+    }
+#endif
+    std::error_code ec;
+    return normalize_generic_path(fs::absolute(p, ec));
+}
+
 bool read_file(const std::string &path, std::string *out) {
-    std::ifstream in(path, std::ios::binary);
-    if (!in)
-        return false;
-    std::ostringstream ss;
-    ss << in.rdbuf();
-    *out = ss.str();
-    return true;
+    std::string open_path = path;
+#ifdef _WIN32
+    if (open_path.size() >= 2 && open_path[0] == '/' && open_path[1] != '/') {
+        if (open_path.find('/', 1) != std::string::npos) {
+            std::string candidate = "/" + open_path;
+            std::error_code ec;
+            if (fs::exists(fs::u8path(candidate), ec)) {
+                open_path = candidate;
+            }
+        }
+    }
+#endif
+    // A new file is briefly unreadable while antivirus or the indexer holds
+    // it open, which on Windows lost cross-file findings: the skipped file
+    // took its caller or its sink with it, so the report came back clean
+    // with exit 0. Retry briefly; a file that stays unreadable still
+    // reports "cannot read" instead of failing the open once and moving on.
+    for (int attempt = 0;; ++attempt) {
+        std::ifstream in(fs::u8path(open_path), std::ios::binary);
+        if (in) {
+            std::ostringstream ss;
+            ss << in.rdbuf();
+            *out = ss.str();
+            return true;
+        }
+        if (attempt >= 50)
+            return false;
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
 }
 
 // Just enough JSON to read compile_commands.json: an array of objects with
@@ -58,7 +112,7 @@ class CompileDb {
                 fs::path p(file);
                 if (p.is_relative() && !dir.empty())
                     p = fs::path(dir) / p;
-                files->push_back(p.lexically_normal().generic_string());
+                files->push_back(normalize_generic_path(p));
             }
             if (eat(','))
                 continue;
@@ -229,8 +283,23 @@ bool skip_dir(const std::string &name) {
            name == "third_party";
 }
 
-bool collect(const std::string &target, std::vector<std::string> *files,
-             std::string *error) {
+struct Hidden
+{
+    size_t files = 0, dirs = 0;
+};
+
+void note_hidden(lcreport::Report *report, const Hidden &hidden)
+{
+    if (!hidden.files && !hidden.dirs)
+        return;
+    std::string text = std::to_string(hidden.files) + " file(s)";
+    if (hidden.dirs)
+        text += " and " + std::to_string(hidden.dirs) + " director(ies)";
+    report->notes.push_back(text + " excluded by leakcheck.toml, .leakcheckignore or --exclude");
+}
+
+bool collect(const std::string &target, const Command &command,
+             std::vector<std::string> *files, Hidden *hidden, std::string *error) {
     std::error_code ec;
     fs::path p(target);
     if (!fs::exists(p, ec)) {
@@ -238,18 +307,32 @@ bool collect(const std::string &target, std::vector<std::string> *files,
         return false;
     }
     if (fs::is_directory(p, ec)) {
+        // shortcut: any negation keeps excluded directories traversable; add
+        // prefix-aware pruning if this shows up in large-tree profiles.
+        const bool can_reinclude = std::any_of(
+            command.excludes.begin(), command.excludes.end(),
+            [](const ExcludeRule &rule) { return rule.negated; });
         auto it = fs::recursive_directory_iterator(
             p, fs::directory_options::skip_permission_denied, ec);
         for (; !ec && it != fs::recursive_directory_iterator();
              it.increment(ec)) {
             const fs::path &e = it->path();
             if (it->is_directory(ec)) {
-                if (skip_dir(e.filename().string()))
+                const bool by_rule =
+                    lcconfig::excluded(e.generic_string(), command.excludes);
+                if (by_rule && !can_reinclude)
+                    ++hidden->dirs;
+                if ((by_rule && !can_reinclude) || skip_dir(e.filename().string()))
                     it.disable_recursion_pending();
                 continue;
             }
-            if (kSourceExts.count(e.extension().string()))
-                files->push_back(e.lexically_normal().generic_string());
+            if (!kSourceExts.count(e.extension().string()))
+                continue;
+            if (lcconfig::excluded(e.generic_string(), command.excludes)) {
+                ++hidden->files;
+                continue;
+            }
+            files->push_back(normalize_generic_path(e));
         }
         std::sort(files->begin(), files->end());
         return true;
@@ -267,9 +350,139 @@ bool collect(const std::string &target, std::vector<std::string> *files,
         }
         std::sort(files->begin(), files->end());
         files->erase(std::unique(files->begin(), files->end()), files->end());
+        std::erase_if(*files, [&](const std::string &file) {
+            if (!lcconfig::excluded(file, command.excludes))
+                return false;
+            ++hidden->files;
+            return true;
+        });
         return true;
     }
-    files->push_back(p.lexically_normal().generic_string());
+    if (lcconfig::excluded(p.generic_string(), command.excludes)) {
+        ++hidden->files;
+        return true;
+    }
+    files->push_back(normalize_generic_path(p));
+    return true;
+}
+
+// ---- --changed-only: ask git which files a pull request touches -----------
+
+#ifdef _WIN32
+#define lc_popen _popen
+#define lc_pclose _pclose
+#else
+#define lc_popen popen
+#define lc_pclose pclose
+#endif
+
+std::string quote(const std::string &s) {
+#ifdef _WIN32
+    return "\"" + s + "\"";
+#else
+    std::string out = "'";
+    for (char c : s) {
+        if (c == '\'')
+            out += "'\\''";
+        else
+            out += c;
+    }
+    return out + "'";
+#endif
+}
+
+// Runs git and returns its output lines. False (with the first lines of its
+// error output) when git is missing, the directory is not a repository, or the
+// ref does not resolve: a gate must not silently analyse everything instead.
+bool git_lines(const std::string &root, const std::vector<std::string> &args,
+               std::vector<std::string> *lines, std::string *error) {
+    std::string command = "git -C " + quote(root);
+    for (const std::string &a : args)
+        command += " " + quote(a);
+    command += " 2>&1";
+    FILE *pipe = lc_popen(command.c_str(), "r");
+    if (!pipe) {
+        *error = "cannot run git";
+        return false;
+    }
+    std::string output;
+    char buffer[512];
+    while (fgets(buffer, sizeof buffer, pipe))
+        output += buffer;
+    const int status = lc_pclose(pipe);
+    std::istringstream stream(output);
+    std::string line;
+    while (std::getline(stream, line)) {
+        while (!line.empty() && (line.back() == '\r' || line.back() == '\n'))
+            line.pop_back();
+        if (!line.empty())
+            lines->push_back(line);
+    }
+    if (status != 0) {
+        *error = "git " + args.front() + " failed:";
+        for (size_t i = 0; i < lines->size() && i < 3; ++i)
+            *error += " " + (*lines)[i];
+        return false;
+    }
+    return true;
+}
+
+// Drops files that git says are unchanged since `ref`, and says how many.
+bool changed_only(const Command &command, std::vector<std::string> *files,
+                  size_t *skipped, std::string *error) {
+    const std::string ref = command.changed_only;
+    if (ref.empty())
+        return true;
+    for (char c : ref)
+        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '.' || c == '_' || c == '/' ||
+              c == '@' || c == '{' || c == '}' || c == '^' || c == '~' || c == ':' || c == '-')) {
+            *error = "--changed-only takes a git ref, not '" + ref + "'";
+            return false;
+        }
+    std::error_code ec;
+    fs::path start(command.target);
+    if (!fs::is_directory(start, ec))
+        start = start.parent_path();
+    std::vector<std::string> lines;
+    if (!git_lines(start.generic_string(), {"rev-parse", "--show-toplevel"}, &lines, error)) {
+        *error = "--changed-only needs a git checkout: " + *error;
+        return false;
+    }
+    if (lines.empty()) {
+        *error = "--changed-only needs a git checkout: git named no repository root";
+        return false;
+    }
+    const std::string root = lines.front();
+    lines.clear();
+    if (!git_lines(root, {"diff", "--name-only", ref}, &lines, error))
+        return false;
+    std::vector<std::string> untracked;
+    if (!git_lines(root, {"ls-files", "--others", "--exclude-standard"}, &untracked, error))
+        return false;
+    lines.insert(lines.end(), untracked.begin(), untracked.end());
+    std::set<std::string> changed;
+    for (const std::string &line : lines) {
+        changed.insert(to_absolute_generic_path(fs::path(root) / line));
+    }
+    std::vector<std::string> kept;
+    for (const std::string &file : *files) {
+        const std::string abs = to_absolute_generic_path(file);
+        bool match = changed.count(abs);
+        if (!match) {
+            for (const std::string &ch : changed) {
+                std::error_code eq_ec;
+                if (fs::equivalent(fs::u8path(file), fs::u8path(ch), eq_ec)) {
+                    match = true;
+                    break;
+                }
+            }
+        }
+        if (match)
+            kept.push_back(file);
+        else
+            ++*skipped;
+    }
+    *files = std::move(kept);
     return true;
 }
 
@@ -311,23 +524,110 @@ lcreport::Finding finding_for(const std::string &abs,
     // Line numbers left out so the fingerprint survives edits above it.
     const std::string id =
         issue.rule + "|" + abs + "|" + issue.function + "|" + issue.message;
-    f.key = std::to_string(std::hash<std::string>{}(id));
+    f.key = std::to_string(lcreport::stable_hash(id));
     return f;
+}
+
+void apply_diff_base(const std::string &ref, lcreport::Report &r) {
+    if (ref.empty())
+        return;
+    std::string cmd = "git diff -U0 " + ref;
+#ifdef _WIN32
+    FILE *pipe = _popen(cmd.c_str(), "r");
+#else
+    FILE *pipe = popen(cmd.c_str(), "r");
+#endif
+    if (!pipe)
+        return;
+    std::map<std::string, std::vector<std::pair<int, int>>> changed_ranges;
+    char line[1024];
+    std::string current_file;
+    while (fgets(line, sizeof(line), pipe)) {
+        if (strncmp(line, "+++ b/", 6) == 0) {
+            current_file = line + 6;
+            while (!current_file.empty() && (current_file.back() == '\n' || current_file.back() == '\r'))
+                current_file.pop_back();
+        } else if (strncmp(line, "@@ ", 3) == 0 && !current_file.empty()) {
+            const char *plus = strchr(line + 3, '+');
+            if (plus) {
+                int start = 0, count = 1;
+                if (sscanf(plus + 1, "%d,%d", &start, &count) >= 1) {
+                    changed_ranges[current_file].push_back({start, start + count - 1});
+                }
+            }
+        }
+    }
+#ifdef _WIN32
+    _pclose(pipe);
+#else
+    pclose(pipe);
+#endif
+
+    size_t filtered = 0;
+    std::erase_if(r.findings, [&](const lcreport::Finding &f) {
+        const lcreport::Frame *p = lcreport::primary_frame(f);
+        if (!p || p->file.empty())
+            return false;
+        std::string rel = p->file;
+        auto it = changed_ranges.find(rel);
+        if (it == changed_ranges.end()) {
+            for (const auto &pair : changed_ranges) {
+                if (rel.size() >= pair.first.size() &&
+                    rel.compare(rel.size() - pair.first.size(), pair.first.size(), pair.first) == 0) {
+                    it = changed_ranges.find(pair.first);
+                    break;
+                }
+            }
+        }
+        if (it == changed_ranges.end()) {
+            ++filtered;
+            return true;
+        }
+        for (const auto &rng : it->second) {
+            if (p->line >= rng.first && p->line <= rng.second)
+                return false;
+        }
+        ++filtered;
+        return true;
+    });
+    if (filtered) {
+        r.notes.push_back(std::to_string(filtered) + " finding(s) filtered out because untouched in git diff against " + ref);
+    }
 }
 
 } // namespace
 
 int run_static_analysis(const Command &command) {
+    const auto started = std::chrono::steady_clock::now();
+    auto mark = [&](const char *what) {
+        if (!getenv("LEAKCHECK_PROFILE"))
+            return;
+        const auto now = std::chrono::steady_clock::now();
+        fprintf(stderr, "profile: %-14s %.3fs\n", what,
+                std::chrono::duration<double>(now - started).count());
+    };
     std::vector<std::string> files;
+    Hidden hidden;
     std::string error;
-    if (!collect(command.target, &files, &error)) {
+    if (!collect(command.target, command, &files, &hidden, &error)) {
         fprintf(stderr, "leakcheck: %s\n", error.c_str());
-        return 1;
+        return kExitCouldNotAnalyse;
+    }
+    size_t unchanged = 0;
+    if (!changed_only(command, &files, &unchanged, &error)) {
+        fprintf(stderr, "leakcheck: %s\n", error.c_str());
+        return kExitConfig;
     }
 
     lcreport::Report report;
     report.mode = "static";
+    report.min_severity = command.min_severity;
     report.command.push_back(command.target);
+    note_hidden(&report, hidden);
+    if (!command.changed_only.empty())
+        report.notes.push_back("changed-only: " + std::to_string(files.size()) +
+                               " file(s) analysed, " + std::to_string(unchanged) +
+                               " unchanged since " + command.changed_only + " skipped");
 
     // Orders that conflict between functions: reported at the second, with
     // where the first locks the other way round (in another file: named).
@@ -356,7 +656,7 @@ int run_static_analysis(const Command &command) {
             frame_at(second_file, second.function, second.held_line, 0));
         const std::string id = f.type + "|" + second_file + "|" +
                                second.function + "|" + f.message;
-        f.key = std::to_string(std::hash<std::string>{}(id));
+        f.key = std::to_string(lcreport::stable_hash(id));
         out->push_back(std::move(f));
     };
     // Files are independent (the cross-file order check runs after the join),
@@ -364,7 +664,7 @@ int run_static_analysis(const Command &command) {
     // results and they are merged in file order, so the report is the same
     // whatever the number of threads.
     struct StaticResult {
-        std::vector<lcreport::Finding> findings;
+            std::vector<lcreport::Finding> findings;
         std::vector<std::string> notes;
         std::vector<lcstatic::LockOrder> orders;
         std::set<std::string> shared_names;
@@ -372,7 +672,22 @@ int run_static_analysis(const Command &command) {
         bool analyzed = false;
     };
     std::vector<StaticResult> results(files.size());
-    std::atomic<size_t> next{0};
+    std::atomic<size_t> next{0}, cache_hits{0};
+    // The cache lives beside the tree it describes, one directory for every
+    // run, so it can be ignored by git as a whole.
+    std::string cache_dir;
+    if (!command.no_cache) {
+        std::error_code ec;
+        fs::path root = command.target;
+        if (!fs::is_directory(root, ec))
+            root = root.parent_path();
+        if (root.empty())
+            root = ".";
+        cache_dir = (root / ".leakcheck-cache").generic_string();
+        fs::create_directories(cache_dir, ec);
+        if (ec)
+            cache_dir.clear();
+    }
 
     auto analyse_one = [&](size_t i) {
         const std::string &file = files[i];
@@ -384,8 +699,23 @@ int run_static_analysis(const Command &command) {
         }
         out.analyzed = true;
         std::error_code ec;
-        const std::string abs =
-            fs::absolute(file, ec).lexically_normal().generic_string();
+        const std::string abs = to_absolute_generic_path(file);
+        std::string cache_path;
+        if (!cache_dir.empty()) {
+            cache_path = lcstatic::cache_file(
+                cache_dir, lcstatic::cache_key(abs, src, command.malware));
+            lcstatic::CachedFile cached;
+            if (lcstatic::load_cache(cache_path, &cached)) {
+                out.findings = std::move(cached.findings);
+                out.notes = std::move(cached.notes);
+                out.orders = std::move(cached.orders);
+                out.shared_names = std::move(cached.shared_names);
+                out.taint = std::move(cached.taint);
+                out.analyzed = cached.analyzed;
+                ++cache_hits;
+                return;
+            }
+        }
         if (command.malware) { // --malware: the code is also read for malware families
             lcreport::Report mal;
             scan_into_report(&mal, abs, src, true);
@@ -397,6 +727,13 @@ int run_static_analysis(const Command &command) {
         lcstatic::Allocators allocators; // helpers defined earlier in the file
         lcstatic::Releasers releasers;
         auto add = [&](const lcstatic::Issue &issue) {
+            if (issue.rule == "return-stack-address") {
+                for (const auto &prev : out.findings) {
+                    if (prev.type == "dangling-pointer" && !prev.access.empty() &&
+                        prev.access[0].line == issue.line)
+                        return;
+                }
+            }
             out.findings.push_back(finding_for(abs, issue));
         };
         const auto fns = lcstatic::parse_functions(tokens);
@@ -429,6 +766,16 @@ int run_static_analysis(const Command &command) {
                 out.shared_names.insert(o.taken);
                 out.orders.push_back(std::move(o));
             }
+        if (!cache_path.empty()) {
+            lcstatic::CachedFile cached;
+            cached.findings = out.findings;
+            cached.notes = out.notes;
+            cached.orders = out.orders;
+            cached.shared_names = out.shared_names;
+            cached.taint = out.taint;
+            cached.analyzed = out.analyzed;
+            lcstatic::save_cache(cache_path, cached);
+        }
     };
 
     size_t workers = command.jobs > 0
@@ -454,6 +801,10 @@ int run_static_analysis(const Command &command) {
             t.join();
     }
 
+    mark("analysed");
+    if (cache_hits)
+        report.notes.push_back(std::to_string(cache_hits.load()) +
+                               " file(s) read from the incremental cache");
     std::vector<lcstatic::LockOrder> shared_orders;
     std::set<std::string> shared_mutexes;
     lcstatic::TaintDb taint_db;
@@ -481,6 +832,7 @@ int run_static_analysis(const Command &command) {
     // twice for it.
     for (auto &[file, issue] : lcstatic::resolve_taint(taint_db))
         report.findings.push_back(finding_for(file, issue));
+    mark("taint");
 
     // The same global mutexes locked in opposite orders by two files (pairs
     // within one file were reported above).
@@ -488,28 +840,63 @@ int run_static_analysis(const Command &command) {
          lcstatic::lock_inversions(shared_orders, shared_mutexes))
         if (first.file != second.file)
             report_inversion(first, second, first.file, second.file, &report.findings);
+    mark("lock-orders");
     if (files.empty())
         report.notes.push_back("no C or C++ source files found");
     if (command.malware)
         lcreport::add_composite_findings(report);
+    lcreport::apply_rule_policy(report, command.rule_policy, command.strict);
+
+    for (auto &f : report.findings) {
+        auto it = command.rule_severities.find(f.type);
+        if (it != command.rule_severities.end())
+            f.severity_override = it->second;
+    }
+
+    if (!command.diff_base.empty())
+        apply_diff_base(command.diff_base, report);
 
     if (!command.suppressions.empty() &&
         !lcreport::apply_suppressions(command.suppressions, report, &error)) {
         fprintf(stderr, "leakcheck: %s\n", error.c_str());
-        return 1;
+        return kExitConfig;
     }
+    if (!command.baseline_path.empty()) {
+        if (command.baseline_mode == "write") {
+            if (!lcreport::write_baseline(command.baseline_path, report, &error)) {
+                fprintf(stderr, "leakcheck: %s\n", error.c_str());
+                return kExitConfig;
+            }
+            report.notes.push_back("baseline written: " + std::to_string(report.findings.size()) +
+                                   " finding(s) to " + command.baseline_path);
+        } else {
+            size_t known = 0;
+            if (!lcreport::apply_baseline(command.baseline_path, report, &known, &error)) {
+                fprintf(stderr, "leakcheck: %s\n", error.c_str());
+                return kExitConfig;
+            }
+        }
+    }
+    mark("suppressed");
     if (!lcreport::write_report(report, command.format, command.output,
                                 &error)) {
         fprintf(stderr, "leakcheck: %s\n", error.c_str());
-        return 1;
+        return kExitCouldNotAnalyse;
     }
+    mark("written");
+    if (command.metrics)
+        lcreport::render_metrics(report, std::cout);
     size_t problems = 0;
     for (const auto &f : report.findings)
-        problems += lcreport::is_problem(f);
+        problems += lcreport::is_problem_at(f, command.min_severity);
     if (!command.output.empty())
         fprintf(
             stderr,
             "leakcheck: %zu problem(s) in %zu file(s); report written to %s\n",
             problems, report.files_analyzed, command.output.c_str());
-    return problems ? command.error_exitcode : 0;
+    // Writing a baseline is the one commit that must go green: it records what
+    // is there so that the next run gates only on new findings.
+    if (command.baseline_mode == "write" && !command.baseline_path.empty())
+        return kExitClean;
+    return problems ? command.error_exitcode : kExitClean;
 }

@@ -1,0 +1,15 @@
+{
+  "problemMatcher": [
+    {
+      "owner": "leakcheck-console",
+      "pattern": [
+        {
+          "regexp": "^\\[(\\d+)\\] (ERROR|WARNING) ([a-z0-9-]+): (.*)$",
+          "severity": 2,
+          "code": 3,
+          "message": 4
+        }
+      ]
+    }
+  ]
+}

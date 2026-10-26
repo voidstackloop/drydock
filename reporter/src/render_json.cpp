@@ -62,7 +62,7 @@ void render_json(const Report &r, std::ostream &os) {
     std::map<std::string, std::pair<uint64_t, uint64_t>> leaks;
     uint64_t problems = 0;
     for (const Finding &f : r.findings) {
-        problems += is_problem(f);
+        problems += is_problem_at(f, r.min_severity);
         by_type[f.type] += 1;
         if (f.type == lcproto::kLeak && !f.category.empty() &&
             f.category != "static") {

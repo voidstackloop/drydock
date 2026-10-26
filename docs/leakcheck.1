@@ -1,6 +1,6 @@
 .TH LEAKCHECK 1 "2026" "leakcheck 1.0.0" "User Commands"
 .SH NAME
-leakcheck \- find memory bugs, leaked resources, weak source and malware in C and C++ programs
+leakcheck \\- find memory bugs, leaked resources, weak source and malware in C and C++ programs
 .SH SYNOPSIS
 .B leakcheck
 .I mode
@@ -9,8 +9,8 @@ leakcheck \- find memory bugs, leaked resources, weak source and malware in C an
 .RI [ target-args ...]
 .SH DESCRIPTION
 .B leakcheck
-has three independent modes that share one reporter, so the console, JSON and
-SARIF output and the exit status are the same from each.
+has three independent modes that share one reporter, so the console, JSON,
+SARIF and JUnit output and the exit status are the same from each.
 .TP
 .B dynamic
 Runs the program with a tracking library loaded into it and reports what
@@ -36,71 +36,144 @@ reads from each Windows program. It exists for training the classifier.
 Options go before the target. In dynamic mode everything after the program is
 passed to it unchanged.
 .TP
-.BR \-o ", " \-\-output " " \fIfile\fR
-Write the report to \fIfile\fR instead of standard output. Required for
-\fB\-f json\fR and \fB\-f sarif\fR in dynamic mode.
+.BR \\-o ", " \\-\\-output " " \\fIfile\\fR
+Write the report to \\fIfile\\fR instead of standard output; \\fB-\\fR explicitly
+selects standard output. Structured dynamic reports require a real file so the
+target's output cannot corrupt them.
 .TP
-.BR \-f ", " \-\-format " " \fIconsole|json|sarif\fR
-Output format. The default is \fBconsole\fR; \fBsarif\fR is SARIF 2.1.0 for
-code-scanning services.
+.BR \\-f ", " \\-\\-format " " \\fIconsole|json|sarif|junit|html|markdown|csv|gitlab|sonarqube|patch\\fR
+Output format. The default is \\fBconsole\\fR; \\fBsarif\\fR is SARIF 2.1.0 for
+code-scanning services, \\fBjunit\\fR is for test reports, \\fBhtml\\fR is one self-contained page,
+\\fBmarkdown\\fR (\\fBmd\\fR) is for pull-request summaries, \\fBcsv\\fR is for audit export,
+\\fBgitlab\\fR is for GitLab Code Quality JSON, \\fBsonarqube\\fR is for SonarQube Generic Issue Import,
+and \\fBpatch\\fR produces unified diff auto-fixes.
 .TP
-.BR \-s ", " \-\-suppressions " " \fIfile\fR
-Ignore findings matching rules written as \fItype\fR:\fIpattern\fR.
+.BR \\-\\-diff\\-base " " \\fIref\\fR
+Static mode: only report findings on lines modified relative to git \\fIref\\fR.
 .TP
-.BR \-\-error\-exitcode " " \fIn\fR
+.B \\-\\-metrics ", " \\-\\-stats
+Include codebase security metrics, issue density, and technical debt score in the report.
+.TP
+.BR \\-s ", " \\-\\-suppressions " " \\fIfile\\fR
+Ignore findings matching rules written as \\fItype\\fR:\\fIpattern\\fR. A rule
+may carry \\fBreason="..."\\fR and \\fBexpires=YYYY\\-MM\\-DD\\fR; an expired rule
+is an error, and the file is checked before the target runs.
+.TP
+.B \\-\\-audit\\-suppressions
+Print every rule with its reason and how long it has left, and fail if one has
+expired.
+.TP
+.BR \\-\\-baseline " " \\fIwrite\\fR|\\fIcompare\\fR " " \\fIfile\\fR
+Write the findings this tree has now, or fail only on findings that are not in
+the baseline. Fingerprints survive reformatting and moved code.
+.TP
+.BR \\-\\-exclude " " \\fIglob\\fR
+Do not read files that match. Repeatable. \\fI.leakcheckignore\\fR and the
+config file can add more; the report says how many files they hid.
+.TP
+.BR \\-\\-min\\-severity " " \\fIerror|warning|note\\fR
+The weakest finding that fails the gate. The default is \\fBwarning\\fR.
+.TP
+.BR \\-\\-error\\-exitcode " " \\fIn\\fR
 Exit status when problems are found, 1 to 255. The default is 2.
 .TP
-.B \-\-malware
+.BR \\-\\-config " " \\fIfile\\fR ", " \\-\\-no\\-config
+Use this file instead of the nearest \\fIleakcheck.toml\\fR, or ignore the config
+and \\fI.leakcheckignore\\fR entirely.
+.TP
+.B \\-\\-print\\-config
+Print the effective settings after the config file and the flags, and exit.
+.TP
+.B \\-\\-rule\\-list
+Print every rule with its CWE, severity and whether it is on by default; with
+\\fB\\-f json\\fR, for inventory tools.
+.TP
+.BR \\-\\-enable\\-rule " " \\fIid\\fR
+Enable one rule, including one strict-only rule, without enabling all strict
+checks. Repeatable. A command-line setting overrides the config file.
+.TP
+.BR \\-\\-disable\\-rule " " \\fIid\\fR
+Remove one rule from every report format and from the exit-status calculation.
+Repeatable. Rule IDs are listed by \\fB\\-\\-rule\\-list\\fR.
+.TP
+.BR \\-\\-changed\\-only " " \\fIref\\fR
+Static mode: analyse only the files that differ from the git \\fIref\\fR.
+.TP
+.B \\-\\-no\\-cache
+Static mode: do not read or write the incremental cache.
+.TP
+.B \\-\\-strict
+Also report the rules that missed the false-alarm budget; they are off by
+default.
+.TP
+.B \\-\\-malware
 Also look for the 100 malware families, in files, in source and in what the
 program does. Much slower; off by default.
 .TP
-.B \-\-ai
+.B \\-\\-ai
 In scan mode, also ask the trained classifier about every Windows program.
-Needs \fImodel/pe\-malware.ai\fR.
+Needs \\fImodel/pe\\-malware.ai\\fR.
 .TP
-.BR \-\-ai\-model " " \fIfile\fR ", " \-\-ai\-threshold " " \fI0..1\fR
+.BR \\-\\-ai\\-model " " \\fIfile\\fR ", " \\-\\-ai\\-threshold " " \\fI0..1\\fR
 Use another model, or another score above which a file counts as malware.
 .TP
-.BR \-j ", " \-\-jobs " " \fIn\fR
+.BR \\-j ", " \\-\\-jobs " " \\fIn\\fR
 Files read at the same time, for scan, static and ai-features. The default is
 one per CPU; the report is identical for any number.
 .TP
-.BR \-V ", " \-\-version
+.BR \\-V ", " \\-\\-version
 Print the version, the commit it was built from, the build type and the
 classifier it would use.
 .TP
-.BR \-h ", " \-\-help
+.BR \\-h ", " \\-\\-help
 Print the full option list, including the dynamic-mode options
-(\fB\-\-guard\-every\fR, \fB\-\-quarantine\-mb\fR, \fB\-\-stack\-depth\fR,
-\fB\-\-fast\-unwind\fR, \fB\-\-abort\-on\-error\fR, \fB\-\-trace\-children\fR,
-\fB\-\-show\-reachable\fR, \fB\-\-no\-leak\-check\fR).
+(\\fB\\-\\-guard\\-every\\fR, \\fB\\-\\-quarantine\\-mb\\fR, \\fB\\-\\-stack\\-depth\\fR,
+\\fB\\-\\-fast\\-unwind\\fR, \\fB\\-\\-abort\\-on\\-error\\fR, \\fB\\-\\-trace\\-children\\fR,
+\\fB\\-\\-show\\-reachable\\fR, \\fB\\-\\-no\\-leak\\-check\\fR).
 .SH EXIT STATUS
 .TP
+.B 0
+Clean. In dynamic mode the program's own status is returned instead, and
+\\fB127\\fR when it could not be started.
+.TP
 .B 2
-Something was found (change with \fB\-\-error\-exitcode\fR).
+Something was found (change with \\fB\\-\\-error\\-exitcode\\fR).
 .TP
 .B 1
 Usage error, or nothing could be analysed.
 .TP
-.B 0
-Clean. In dynamic mode the program's own status is returned instead, and
-\fB127\fR when it could not be started.
+.B 3
+The config, baseline or suppression file is wrong.
 .SH FILES
 .TP
-.I model/pe\-malware.ai
+.I leakcheck.toml
+Settings found upwards from the target: format, jobs, excludes, suppression
+files, rule policy and per-mode thresholds. Flags win over the file.
+.TP
+.I .leakcheckignore
+Globs of files to leave unread, one per line. A later \\fB!\\fR pattern
+re-includes files; \\fB\\e!\\fR and \\fB\\e#\\fR match literal leading markers.
+.TP
+.I .leakcheck-cache
+Static mode's per-file cache, kept beside the analysed tree and keyed by file
+content, parser version and flags. Remove it at any time.
+.TP
+.I model/pe\\-malware.ai
 The shipped classifier, found next to the binary, next to the project root, or
-under \fIshare/leakcheck/model\fR.
+under \\fIshare/leakcheck/model\\fR.
 .TP
 .I libleakcheck_preload.so
 The runtime injected in dynamic mode. On Windows,
-\fIleakcheck_preload.dll\fR. It must stay beside the \fBleakcheck\fR binary.
+\\fIleakcheck_preload.dll\\fR. It must stay beside the \\fBleakcheck\\fR binary.
 .SH EXAMPLES
 .nf
 leakcheck dynamic ./my_program arg1
-leakcheck static src/ \-f sarif \-o leakcheck.sarif
+leakcheck static src/ \\-f sarif \\-o leakcheck.sarif
+leakcheck static . \\-\\-baseline compare .leakcheck-baseline
 leakcheck scan ./downloads/
-leakcheck scan \-\-ai ./downloads/ \-f json \-o scan.json
+leakcheck scan \\-\\-ai ./downloads/ \\-f json \\-o scan.json
 .fi
 .SH SEE ALSO
-The full reference, the design notes and the model description are installed
-under \fIshare/doc/leakcheck\fR and kept in the source tree under \fIdocs/\fR.
+The full reference, the design notes, the rule pages and the model
+description are installed under \\fIshare/doc/leakcheck\\fR and kept in the
+source tree under \\fIdocs/\\fR.

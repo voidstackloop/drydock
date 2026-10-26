@@ -20,5 +20,7 @@ std::string model_description();
 
 // What a scan says about one file (named by its absolute path), added to `report`.
 // `malware` is --malware. The static analysis uses it for the sources it reads.
+// `root` is the scanned tree, used only to make finding identities relative
+// to it; empty keeps them absolute.
 void scan_into_report(lcreport::Report *report, const std::string &abs, const std::string &bytes,
-                      bool malware);
+                      bool malware, const std::string &root = "");

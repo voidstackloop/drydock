@@ -112,6 +112,9 @@ def cli_usage_errors():
     expect(p.returncode == 1 and "1-255" in p.stderr, p.stderr)
     p = run(["--error-exitcode", "256", "dynamic", "true"])
     expect(p.returncode == 1 and "1-255" in p.stderr, p.stderr)
+    p = run(["static", "--disable-rule", "no-such-rule", "."])
+    expect(p.returncode == 3 and "unknown rule" in p.stderr and "--rule-list" in p.stderr,
+           (p.returncode, p.stderr))
 
 
 @test("cli")
@@ -123,6 +126,20 @@ def cli_version_names_the_build():
     expect("0.0.0-dev" not in first, f"the build did not generate its version: {first}")
     expect("classifier:" in p.stdout, p.stdout)
     expect(p.stdout == run(["-V"]).stdout, "-V and --version must agree")
+
+
+@test("cli")
+def cli_rule_list_is_an_inventory():
+    p = run(["--rule-list", "-f", "json"])
+    expect(p.returncode == 0, f"exit {p.returncode}: {p.stderr}")
+    rules = {r["id"]: r for r in json.loads(p.stdout)}
+    expect(rules["command-injection"]["cwe"] == 78, rules.get("command-injection"))
+    expect(rules["format-string"]["default_severity"] in ("error", "warning"),
+           rules.get("format-string"))
+    expect(rules["format-string"]["enabled"] is True, rules.get("format-string"))
+    p = run(["--rule-list"])
+    expect(p.returncode == 0 and "ID\tNAME\tCWE" in p.stdout, p.stdout[:200])
+    expect("command-injection" in p.stdout, p.stdout[:200])
 
 
 @test("cli")
@@ -147,6 +164,9 @@ def cli_dynamic_json_and_sarif_need_an_output_file():
         p = run(["-f", fmt, "dynamic", prog("no_bugs")])
         expect(p.returncode == 1 and p.stdout == "" and "-o" in p.stderr,
                f"{fmt}: exit {p.returncode}: {p.stderr!r} {p.stdout!r}")
+        p = run(["-f", fmt, "-o", "-", "dynamic", prog("no_bugs")])
+        expect(p.returncode == 1 and p.stdout == "" and "-o <file>" in p.stderr,
+               f"{fmt} stdout: exit {p.returncode}: {p.stderr!r} {p.stdout!r}")
     p = run(["dynamic", prog("no_bugs")])
     expect(p.returncode == 0 and "hello" in p.stdout, (p.returncode, p.stdout, p.stderr))
 
@@ -363,6 +383,9 @@ def leak_classification_matches_valgrind():
     frame = top(big, "alloc")
     expect(frame.get("function") == "lose_buffer" and frame.get("file", "").endswith("leaks.c"), frame)
     expect(frame.get("line") == 16, frame)
+    p, hidden = run_json(["dynamic", "--disable-rule", "memory-leak", prog("leaks")])
+    expect(p.returncode == 0 and hidden["findings"] == [], (p.returncode, types(hidden)))
+    expect(any("disabled rule policy" in n for n in hidden["notes"]), hidden["notes"])
 
 
 @test("dynamic")
@@ -1158,8 +1181,11 @@ def suppressions_and_exit_codes():
         s.write("no colon here\n")
         bad = s.name
     try:
+        # A bad suppression file is a config problem: exit 3, and the target
+        # is not run at all.
         p = run(["dynamic", "-s", bad, prog("no_bugs")])
-        expect(p.returncode == 1 and "expected <type>:<pattern>" in p.stderr, p.stderr)
+        expect(p.returncode == 3 and "expected <type>:<pattern>" in p.stderr, p.stderr)
+        expect("hello" not in p.stdout, p.stdout)
     finally:
         os.unlink(bad)
 
@@ -1516,7 +1542,8 @@ def got(report, path):
 
 def cases():
     d = os.path.join(ARGS.source, "tests", "static", "cases")
-    return [os.path.join(d, n) for n in sorted(os.listdir(d))]
+    return [os.path.join(d, n) for n in sorted(os.listdir(d))
+            if os.path.isfile(os.path.join(d, n))]
 
 
 @test("static")
@@ -1634,6 +1661,8 @@ def static_clean_code_and_formats():
     p = run(["static", path])
     expect("WARNING memory-leak" in p.stdout and "files analyzed: 1" in p.stdout, p.stdout)
     _, r = run_json(["static", path])
+    p = run(["static", "-f", "json", "-o", "-", path])
+    expect(p.returncode == 2 and json.loads(p.stdout)["findings"], p.stdout[:200])
     with tempfile.NamedTemporaryFile(suffix=".sarif", delete=False) as f:
         out = f.name
     try:
@@ -1641,7 +1670,239 @@ def static_clean_code_and_formats():
         check_sarif(json.load(open(out)), len(r["findings"]))
     finally:
         os.unlink(out)
+    with tempfile.NamedTemporaryFile(suffix=".html", delete=False) as f:
+        out = f.name
+    try:
+        p = run(["static", "-f", "html", "-o", out, path])
+        expect(p.returncode == 2, p.returncode)
+        text = open(out).read()
+        expect("<!DOCTYPE html>" in text and "memory-leak" in text, text[:200])
+    finally:
+        os.unlink(out)
     expect(run(["static", "/no/such/path"]).returncode == 1, "missing path fails")
+
+
+@test("static")
+def static_baseline_only_gates_new_findings():
+    with tempfile.TemporaryDirectory() as tmp:
+        src = os.path.join(tmp, "bugs.c")
+        body = ("#include <stdlib.h>\n"
+                "int f(int n){\n"
+                "  char *p = malloc(8);\n"
+                "  if (n) return 0;\n"
+                "  free(p);\n"
+                "  return 1;\n"
+                "}\n")
+        with open(src, "w") as f:
+            f.write(body)
+        base = os.path.join(tmp, "baseline.txt")
+        p = run(["static", "--baseline", "write", base, src])
+        expect(p.returncode == 0, f"writing a baseline must go green: {p.returncode}\n{p.stderr}")
+        expect(os.path.exists(base), "baseline file written")
+        p = run(["static", "--baseline", "compare", base, src])
+        expect(p.returncode == 0, f"a known finding must not gate: {p.returncode}\n{p.stdout}")
+        # The same finding, ten lines down and reformatted: same fingerprint.
+        with open(src, "w") as f:
+            f.write("\n" * 10 + body.replace("char *p", "char* p"))
+        p = run(["static", "--baseline", "compare", base, src])
+        expect(p.returncode == 0, f"a moved finding is the same finding: {p.returncode}\n{p.stdout}")
+        # A new leak in another function is a new finding.
+        with open(src, "a") as f:
+            f.write("int g(void){\n  char *q = malloc(16);\n  return 1;\n}\n")
+        p = run(["static", "--baseline", "compare", base, src])
+        expect(p.returncode == 2, f"a new finding must gate: {p.returncode}\n{p.stdout}")
+        expect("g" in p.stdout and "baseline" in p.stdout.lower(), p.stdout)
+        # A missing or corrupt baseline is a configuration error, never a pass.
+        p = run(["static", "--baseline", "compare", os.path.join(tmp, "nope.txt"), src])
+        expect(p.returncode == 3, f"missing baseline: {p.returncode}")
+        with open(base, "w") as f:
+            f.write("not a baseline\n")
+        p = run(["static", "--baseline", "compare", base, src])
+        expect(p.returncode == 3, f"corrupt baseline: {p.returncode}")
+
+
+@test("static")
+def static_incremental_cache_reads_only_what_changed():
+    leak = ("#include <stdlib.h>\n"
+            "void f(void){ char *p = malloc(8); (void)p; }\n")
+    clean = "int g(void){ return 1; }\n"
+    with tempfile.TemporaryDirectory() as tmp:
+        a, b = os.path.join(tmp, "a.c"), os.path.join(tmp, "b.c")
+        with open(a, "w") as f:
+            f.write(leak)
+        with open(b, "w") as f:
+            f.write(clean)
+        cache = os.path.join(tmp, ".leakcheck-cache")
+        _, first = run_json(["static", tmp])
+        expect(os.path.isdir(cache), "the first run writes a cache beside the tree")
+        expect(not any("cache" in n for n in first["notes"]), first["notes"])
+        _, warm = run_json(["static", tmp])
+        expect(any("2 file(s) read from the incremental cache" in n for n in warm["notes"]),
+               warm["notes"])
+        expect(sorted(f["type"] for f in warm["findings"]) ==
+               sorted(f["type"] for f in first["findings"]), (first["findings"], warm["findings"]))
+        # Touch one file: the other stays cached, and the new finding appears.
+        with open(a, "w") as f:
+            f.write(leak + "void h(void){ char *q = malloc(4); (void)q; }\n")
+        _, warm = run_json(["static", tmp])
+        expect(any("1 file(s) read from the incremental cache" in n for n in warm["notes"]),
+               warm["notes"])
+        expect(len(warm["findings"]) == 2, types(warm))
+        # --no-cache neither reads nor writes it.
+        with tempfile.TemporaryDirectory() as fresh:
+            with open(os.path.join(fresh, "a.c"), "w") as f:
+                f.write(leak)
+            _, plain = run_json(["static", "--no-cache", fresh])
+            expect(not os.path.isdir(os.path.join(fresh, ".leakcheck-cache")),
+                   "--no-cache left a cache behind")
+            expect(not any("cache" in n for n in plain["notes"]), plain["notes"])
+
+
+@test("static")
+def static_changed_only_against_a_git_ref():
+    import shutil
+    if not shutil.which("git"):
+        return
+    leak = ("#include <stdlib.h>\n"
+            "void f(void){ char *p = malloc(8); (void)p; }\n")
+    with tempfile.TemporaryDirectory() as tmp:
+        def git(*args):
+            p = subprocess.run(["git", "-C", tmp] + list(args), capture_output=True, text=True)
+            expect(p.returncode == 0, (args, p.stderr))
+        git("init", "-q")
+        git("config", "user.email", "test@example.com")
+        git("config", "user.name", "test")
+        with open(os.path.join(tmp, "old.c"), "w") as f:
+            f.write(leak)
+        with open(os.path.join(tmp, "new.c"), "w") as f:
+            f.write("int clean(void){ return 0; }\n")
+        git("add", ".")
+        git("commit", "-qm", "start")
+        with open(os.path.join(tmp, "new.c"), "w") as f:
+            f.write(leak.replace("f(", "g("))
+        p, r = run_json(["static", tmp, "--changed-only", "HEAD"])
+        expect(p.returncode == 2, f"exit {p.returncode}: {p.stderr}")
+        expect(r["summary"]["files_analyzed"] == 1, r["summary"])
+        expect(r["findings"] and os.path.basename(r["findings"][0]["location"]["file"]) == "new.c",
+               r["findings"])
+        expect(any("changed-only: 1 file(s) analysed, 1 unchanged" in n for n in r["notes"]),
+               r["notes"])
+        # An invented ref is a config error, not an empty clean run.
+        p = run(["static", "--changed-only", "no-such-ref", tmp])
+        expect(p.returncode == 3, f"unknown ref: {p.returncode}: {p.stderr}")
+
+
+@test("static")
+def static_config_excludes_and_ignore_file():
+    leak = ("#include <stdlib.h>\n"
+            "void f(void){ char *p = malloc(8); (void)p; }\n")
+    with tempfile.TemporaryDirectory() as tmp:
+        for sub in ("src", "vendor"):
+            os.makedirs(os.path.join(tmp, sub))
+            with open(os.path.join(tmp, sub, "x.c"), "w") as f:
+                f.write(leak)
+        with open(os.path.join(tmp, "leakcheck.toml"), "w") as f:
+            f.write('format = "json"\nmin-severity = "error"\n'
+                    'exclude = ["vendor/**"]\n[static]\njobs = 1\n'
+                    'disable-rules = ["memory-leak"]\n')
+        p = run(["static", tmp])
+        expect(p.returncode == 0, f"min-severity=error: {p.returncode}\n{p.stderr}")
+        report = json.loads(p.stdout)
+        expect(report["summary"]["files_analyzed"] == 1, report["summary"])
+        expect(report["findings"] == [], report["findings"])
+        expect(any("excluded" in n for n in report["notes"]), report["notes"])
+        p = run(["static", "--enable-rule", "memory-leak", tmp])
+        enabled = json.loads(p.stdout)
+        expect(types(enabled) == ["memory-leak"], types(enabled))
+        p = run(["static", "--print-config", tmp])
+        expect(p.returncode == 0, p.stderr)
+        expect("vendor/**" in p.stdout and 'min-severity = "error"' in p.stdout, p.stdout)
+        # A mode section overrides global policy, and a CLI setting overrides both.
+        with open(os.path.join(tmp, "leakcheck.toml"), "w") as f:
+            f.write('format = "json"\ndisable-rules = ["memory-leak"]\n'
+                    '[static]\nenable-rules = ["memory-leak"]\n')
+        p = run(["static", tmp])
+        expect(types(json.loads(p.stdout)) == ["memory-leak", "memory-leak"], p.stdout)
+        p = run(["static", "--disable-rule", "memory-leak", tmp])
+        expect(json.loads(p.stdout)["findings"] == [], p.stdout)
+        # Asking what the settings are must work even with no mode yet.
+        p = run(["--print-config"])
+        expect(p.returncode == 0 and "[effective]" in p.stdout, (p.returncode, p.stderr))
+        with open(os.path.join(tmp, "leakcheck.toml"), "w") as f:
+            f.write('bogus = 1\n')
+        expect(run(["static", tmp]).returncode == 3, "a typo in the config is exit 3")
+        with open(os.path.join(tmp, "leakcheck.toml"), "w") as f:
+            f.write('enable-rules = ["memory-leak"]\ndisable-rules = ["memory-leak"]\n')
+        p = run(["static", tmp])
+        expect(p.returncode == 3 and "both enabled and disabled" in p.stderr, p.stderr)
+    with tempfile.TemporaryDirectory() as tmp:
+        os.makedirs(os.path.join(tmp, "src"))
+        os.makedirs(os.path.join(tmp, "vendor"))
+        os.makedirs(os.path.join(tmp, "vendor", "kept"))
+        for sub in ("src", "vendor"):
+            with open(os.path.join(tmp, sub, "x.c"), "w") as f:
+                f.write(leak)
+        with open(os.path.join(tmp, "vendor", "kept", "x.c"), "w") as f:
+            f.write(leak)
+        for name in ("!generated.c", "#generated.c"):
+            with open(os.path.join(tmp, name), "w") as f:
+                f.write(leak)
+        with open(os.path.join(tmp, ".leakcheckignore"), "w") as f:
+            f.write("vendor/**\n!vendor/kept/**\n\\!generated.c\n\\#generated.c\n")
+        p, report = run_json(["static", tmp])
+        expect(report["summary"]["files_analyzed"] == 2, report["summary"])
+        expect(any("excluded" in n for n in report["notes"]), report["notes"])
+        with open(os.path.join(tmp, ".leakcheckignore"), "w") as f:
+            f.write("!\n")
+        p = run(["static", tmp])
+        expect(p.returncode == 3 and "needs a glob" in p.stderr, p.stderr)
+
+
+@test("static")
+def static_suppressions_have_an_owner_and_an_expiry():
+    with tempfile.TemporaryDirectory() as tmp:
+        good = os.path.join(tmp, "good.supp")
+        with open(good, "w") as f:
+            f.write('memory-leak:*c_bugs.c reason="old parser" expires=2030-01-01\n')
+        p = run(["--audit-suppressions", "-s", good])
+        expect(p.returncode == 0, f"exit {p.returncode}: {p.stderr}")
+        expect("old parser" in p.stdout and "day(s) left" in p.stdout, p.stdout)
+        p, report = run_json(["static", "-s", good, cases()[0]])
+        expect(any("suppressed" in n for n in report["notes"]), report["notes"])
+        bad = os.path.join(tmp, "expired.supp")
+        with open(bad, "w") as f:
+            f.write('memory-leak:*c_bugs.c reason="forgotten" expires=2020-01-01\n')
+        p = run(["static", "-s", bad, cases()[0]])
+        expect(p.returncode == 3, f"an expired rule is an error: {p.returncode}")
+        expect("expired" in p.stderr, p.stderr)
+        p = run(["--audit-suppressions", "-s", bad])
+        expect(p.returncode == 3 and "EXPIRED" in p.stdout, p.stdout)
+
+
+@test("static")
+def static_junit_and_min_severity():
+    p = run(["static", "-f", "junit", cases()[0]])
+    expect(p.stdout.startswith("<?xml") and "<testsuite" in p.stdout and
+           "</testsuite>" in p.stdout, p.stdout[:300])
+    expect(p.returncode in (0, 2), f"exit {p.returncode}: {p.stderr}")
+    p = run(["static", "--min-severity", "error", cases()[0]])
+    expect(p.returncode == 0 and "problems: 0" in p.stdout, f"{p.returncode}\n{p.stdout}")
+    p = run(["static", cases()[0]])
+    expect(p.returncode == 2 and "problems: 0" not in p.stdout, f"{p.returncode}\n{p.stdout}")
+
+
+@test("static")
+def static_enable_one_strict_rule():
+    with tempfile.NamedTemporaryFile(suffix=".c", mode="w", delete=False) as f:
+        f.write("void bad(void){ char *p = 0; *p = 'x'; }\n")
+        path = f.name
+    try:
+        p, report = run_json(["static", path])
+        expect(p.returncode == 0 and report["findings"] == [], types(report))
+        p, report = run_json(["static", "--enable-rule", "null-dereference", path])
+        expect(p.returncode == 2 and types(report) == ["null-dereference"], types(report))
+    finally:
+        os.unlink(path)
 
 
 BANK_C = """#include <pthread.h>
@@ -1696,6 +1957,27 @@ def lock_order_inversion_across_files():
 # --------------------------------------------------------------- scan ------
 
 EICAR = "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
+SCAN_PAYLOAD = "stratum+tcp://pool.supportxmr.com:3333 rx/0 donate-level=1\n"
+
+
+@test("scan")
+def scan_ignore_reincludes_a_nested_file():
+    with tempfile.TemporaryDirectory() as tmp:
+        os.makedirs(os.path.join(tmp, "vendor", "kept"))
+        with open(os.path.join(tmp, "clean.txt"), "w") as f:
+            f.write("clean\n")
+        with open(os.path.join(tmp, "vendor", "ignored.com"), "w") as f:
+            f.write(SCAN_PAYLOAD)
+        kept = os.path.join(tmp, "vendor", "kept", "checked.com")
+        with open(kept, "w") as f:
+            f.write(SCAN_PAYLOAD)
+        with open(os.path.join(tmp, ".leakcheckignore"), "w") as f:
+            f.write("vendor/**\n!vendor/kept/**\n")
+        p, report = run_json(["scan", tmp])
+        expect(p.returncode == 2, (p.returncode, p.stderr))
+        expect(report["summary"]["files_analyzed"] == 3, report["summary"])
+        hits = [os.path.basename(f["location"]["file"]) for f in report["findings"]]
+        expect(hits == ["checked.com"], hits)
 
 
 @test("scan")
@@ -1711,6 +1993,8 @@ def scan_eicar_file_is_reported():
         expect(r["summary"]["files_analyzed"] == 1, r["summary"])
         expect("meant to be found" in r["findings"][0]["message"], r["findings"][0]["message"])
         expect(r["findings"][0]["category"] == "scan", r["findings"][0])
+        p, hidden = run_json(["scan", "--disable-rule", "malware-signature", path])
+        expect(p.returncode == 0 and hidden["findings"] == [], (p.returncode, types(hidden)))
         tail = "EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
         with open(os.path.join(d, "tail-only.com"), "w") as f:
             f.write(tail)
@@ -1749,6 +2033,93 @@ def scan_clean_file_and_missing_path():
         expect(r["summary"]["files_analyzed"] == 1, r["summary"])
     p = run(["scan", "/no/such/scan-target"])
     expect(p.returncode == 1 and "does not exist" in p.stderr, p.stderr)
+
+
+@test("scan")
+def scan_fingerprints_do_not_depend_on_the_checkout_path():
+    # SARIF consumers de-duplicate by partialFingerprints. A fingerprint that
+    # embeds the absolute path, or std::hash (which differs between standard
+    # libraries), makes the same finding new on every machine and on Windows.
+    def fingerprints(root):
+        with open(os.path.join(root, "invoice.pdf.exe"), "w") as f:
+            f.write("echo hi\n")
+        with tempfile.NamedTemporaryFile(suffix=".sarif", delete=False) as f:
+            out = f.name
+        try:
+            run(["-f", "sarif", "-o", out, "scan", root])
+            sarif = json.load(open(out))
+        finally:
+            os.unlink(out)
+        results = sarif["runs"][0]["results"]
+        expect(len(results) == 1, [r["ruleId"] for r in results])
+        return results[0]["partialFingerprints"]["leakcheck/v1"]
+    with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
+        first, second = fingerprints(a), fingerprints(b)
+    expect(first == second, (first, second))
+
+
+@test("scan")
+def scan_baseline_survives_an_edit_above_the_finding():
+    # A baseline that keys on the byte offset turns every doc edit above a
+    # signature into a new finding. The type, file and message are enough.
+    payload = SCAN_PAYLOAD
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "sample.com")
+        with open(path, "w") as f:
+            f.write(payload)
+        base = os.path.join(d, "base.txt")
+        p = run(["scan", "--baseline", "write", base, path])
+        expect(p.returncode == 0, (p.returncode, p.stderr))
+        p = run(["scan", "--baseline", "compare", base, path])
+        expect(p.returncode == 0, (p.returncode, p.stdout))
+        with open(path, "w") as f:
+            f.write("a line added above the signature\n" + payload)
+        p = run(["scan", "--baseline", "compare", base, path])
+        expect(p.returncode == 0, f"the same finding moved: {p.returncode}\n{p.stdout}")
+        # A second, different signature is still new.
+        with open(os.path.join(d, "other.com"), "w") as f:
+            f.write(payload)
+        p = run(["scan", "--baseline", "compare", base, d])
+        expect(p.returncode == 2, f"a finding in a new file must gate: {p.returncode}")
+
+
+@test("scan")
+def scan_survives_a_corrupt_file_of_every_format():
+    # A hostile upload is a valid magic followed by impossible numbers. Each
+    # format reader must end in a finding or in silence, never in a segfault or
+    # a failed allocation, and a corrupt model must be an error, not a crash.
+    import struct
+    files = {}
+    elf = (b"\x7fELF\x02\x01\x01" + b"\x00" * 9 +
+           struct.pack("<HHI", 2, 0xb7, 1) +
+           struct.pack("<QQQ", 0xffffffffffffffff, 0, 0xffffffffffffffff) +
+           struct.pack("<IHHHHHH", 0, 64, 56, 0xffff, 0, 0, 0))
+    files["truncated.elf"] = elf
+    pe = bytearray(b"MZ" + b"\x00" * 62)
+    pe[0x3c:0x40] = struct.pack("<I", 0xffffff00)  # e_lfanew past the file
+    files["bad-offset.exe"] = bytes(pe)
+    pe2 = (b"MZ" + b"\x00" * 58 + struct.pack("<I", 0x40) +
+           b"PE\x00\x00" + struct.pack("<HHIII", 0x14c, 0xffff, 0, 0, 0) +
+           struct.pack("<H", 0xffff))  # 65535 sections, optional header size 0xffff
+    files["many-sections.exe"] = pe2
+    files["truncated.macho"] = (b"\xcf\xfa\xed\xfe" + struct.pack("<IIIIIII", 0x01000007, 3, 2,
+                                                                 0xffffffff, 0, 0, 0))
+    files["garbage.sh"] = b"#!/bin/sh\n" + bytes(range(256)) * 4
+    with tempfile.TemporaryDirectory() as d:
+        for name, data in files.items():
+            with open(os.path.join(d, name), "wb") as f:
+                f.write(data)
+        for name in files:
+            p, r = run_json(["scan", os.path.join(d, name)])
+            expect(p.returncode in (0, 2), (name, p.returncode, p.stderr))
+            expect("AddressSanitizer" not in p.stderr and "runtime error" not in p.stderr,
+                   (name, p.stderr[-400:]))
+            expect(r is not None and "findings" in r, (name, r))
+        bad_model = os.path.join(d, "bad.ai")
+        with open(bad_model, "w") as f:
+            f.write("leakcheck-ai 1\nfeatures 3\ntrees 1\ntree -1\n")
+        p = run(["scan", "--ai", "--ai-model", bad_model, os.path.join(d, "many-sections.exe")])
+        expect(p.returncode in (1, 3) and "claims" in p.stderr, (p.returncode, p.stderr))
 
 
 @test("scan")

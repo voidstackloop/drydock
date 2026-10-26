@@ -25,6 +25,22 @@ A change is expected to come with the test that would have caught it. `ctest`
 covers the units and the CLI; `tests/run_tests.py` has the end-to-end cases.
 Neither may be weakened to make a change pass.
 
+Before pushing, the checks CI runs beyond the suites:
+
+```sh
+python3 tools/precision.py --build build --reuse --write-doc   # over the 2% budget?
+git diff --exit-code eval/PRECISION.md docs/CWE-COVERAGE.md docs/rules
+python3 tools/cwe_matrix.py --check && python3 tools/gen_rule_docs.py --check
+python3 tools/determinism.py --leakcheck build/leakcheck --out /tmp/d.json
+./build/leakcheck scan . --exclude 'build*' --exclude 'tests/**' \
+    --exclude 'fuzz/corpus/**' --exclude 'eval/cases/**' --exclude data \
+    --exclude .leakcheck-baseline --baseline compare .leakcheck-baseline
+```
+
+For a change to a reader of untrusted bytes (lexer, PE/Mach-O/ELF, the model
+loader, suppressions, the report reader), run the fuzz targets before and
+after: `sh fuzz/smoke.sh build-fuzz 60` (see `fuzz/README.md` for the build).
+
 ## Changing the classifier
 
 The `--ai` model is the one part of leakcheck that reports a probability, so it

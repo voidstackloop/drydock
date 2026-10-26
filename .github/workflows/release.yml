@@ -1,7 +1,7 @@
 name: Release
 
-# macOS archives are absent until the preload compiles on Darwin (see
-# docs/ROADMAP.md, known issues). Everything else here is platform-independent.
+# One archive per platform, built from the tag, never from a laptop. macOS is a
+# universal binary (arm64 + x86_64), so one archive covers both kinds of Mac.
 
 # A tag publishes. The manual run builds exactly the same archives without
 # creating a release, so the packaging can be tested before the first tag.
@@ -88,14 +88,47 @@ jobs:
           name: windows-x86_64
           path: leakcheck-*.zip
 
+  macos-universal:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - run: brew install ninja
+      - name: Build and package
+        run: |
+          set -euo pipefail
+          version=$(cat VERSION)
+          name="leakcheck-$version-macos-universal"
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DLEAKCHECK_BUILD_TESTS=OFF \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+          cmake --build build --parallel
+          cmake --install build --prefix "$PWD/stage/$name"
+          tar -C stage -czf "$name.tar.gz" "$name"
+      - name: Check both slices are there
+        run: |
+          set -euo pipefail
+          lipo -archs stage/*/bin/leakcheck | tee /tmp/archs
+          grep -q arm64 /tmp/archs && grep -q x86_64 /tmp/archs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-universal
+          path: leakcheck-*.tar.gz
+
   release:
-    needs: [linux-x86_64, linux-aarch64, windows-x86_64]
+    needs: [linux-x86_64, linux-aarch64, macos-universal, windows-x86_64]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
+      # There is no dependency tree to inventory: the tool is one binary. The
+      # SBOM says so, with the hash of every archive, and ships with them.
+      - name: SBOM
+        working-directory: dist
+        run: python3 ../tools/sbom.py --version "$(cat ../VERSION)" --out SBOM.cdx.json leakcheck-*
       - name: Checksums
         working-directory: dist
         run: sha256sum * > SHA256SUMS

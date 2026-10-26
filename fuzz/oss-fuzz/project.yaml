@@ -1,0 +1,10 @@
+homepage: "https://github.com/voidstackloop/drydock"
+main_repo: "https://github.com/voidstackloop/drydock"
+language: c++
+sanitizers:
+  - address
+  - undefined
+fuzzing_engines:
+  - libfuzzer
+architectures:
+  - x86_64

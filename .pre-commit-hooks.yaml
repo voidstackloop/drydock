@@ -1,0 +1,8 @@
+- id: leakcheck
+  name: leakcheck (static analysis)
+  description: Report memory, resource, locking and security bugs in the C/C++ files being committed.
+  entry: python3 tools/pre_commit.py
+  language: system
+  types: [c, c++]
+  pass_filenames: true
+  require_serial: true

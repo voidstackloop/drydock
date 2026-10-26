@@ -1,0 +1,46 @@
+name: Nightly fuzz
+
+# The per-push job smokes every target for a minute; this one gives each
+# target five minutes, so the checked-in corpus keeps accumulating coverage
+# between OSS-Fuzz runs. Manual dispatch for a longer weekend run.
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-nightly
+  cancel-in-progress: false
+
+jobs:
+  fuzz-long:
+    name: fuzz-long
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install clang and Ninja
+        run: sudo apt-get update && sudo apt-get install -y clang ninja-build
+      - name: Configure the fuzz targets
+        run: >
+          CC=clang CXX=clang++ cmake -S . -B build-fuzz -G Ninja
+          -DLEAKCHECK_BUILD_FUZZERS=ON -DLEAKCHECK_BUILD_TESTS=OFF
+          -DLEAKCHECK_BUILD_PRELOAD=OFF
+          -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g -O1"
+      - name: Build
+        run: cmake --build build-fuzz --parallel
+      - name: Five minutes per target
+        run: sh fuzz/smoke.sh build-fuzz 300
+      - name: Keep what crashed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-nightly-crashes
+          path: |
+            crash-*
+            timeout-*
+            oom-*
+          if-no-files-found: ignore

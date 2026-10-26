@@ -170,7 +170,7 @@ void render_console(const Report &r, std::ostream &os) {
         leaks; // category -> blocks, bytes
     size_t problems = 0;
     for (const Finding &f : r.findings) {
-        if (is_problem(f))
+        if (is_problem_at(f, r.min_severity))
             ++problems;
         if (f.type == lcproto::kLeak && r.mode == "dynamic") {
             leaks[f.category].first += f.blocks;

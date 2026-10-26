@@ -123,6 +123,10 @@ void code_flow(Json &j, const std::vector<Frame> &flow,
     j.end_object().end_array();
 }
 
+std::string rule_help_uri(const std::string &id) {
+    return "https://github.com/voidstackloop/drydock/blob/main/docs/rules/" + id + ".md";
+}
+
 int rule_index(const std::string &id) {
     const auto &rs = rules();
     for (size_t i = 0; i < rs.size(); ++i)
@@ -164,11 +168,19 @@ void render_sarif(const Report &r, std::ostream &os) {
             .kv("text", rule.help)
             .end_object();
         j.key("help").begin_object().kv("text", rule.help).end_object();
+        j.kv("helpUri", rule_help_uri(rule.id));
         j.key("defaultConfiguration")
             .begin_object()
             .kv("level", "error")
             .end_object();
         if (const lcvuln::VulnInfo *vuln = lcvuln::vuln_of(rule.id)) {
+            j.key("relationships").begin_array().begin_object();
+            j.key("target").begin_object();
+            j.kv("id", std::to_string(vuln->cwe));
+            j.key("toolComponent").begin_object().kv("name", "CWE").end_object();
+            j.end_object();
+            j.key("kinds").begin_array().value("superset").end_array();
+            j.end_object().end_array();
             j.key("properties").begin_object();
             j.key("tags").begin_array();
             j.value("security");
@@ -185,6 +197,36 @@ void render_sarif(const Report &r, std::ostream &os) {
     }
     j.end_array();
     j.end_object().end_object();
+
+    // The CWE taxonomy, so a reviewer can group results by weakness instead of
+    // by our rule ids. One taxon per weakness this build knows.
+    j.key("taxonomies").begin_array().begin_object();
+    j.kv("name", "CWE")
+        .kv("version", "4.15")
+        .kv("organization", "MITRE")
+        .kv("informationUri", "https://cwe.mitre.org/")
+        .kv("isComprehensive", false);
+    j.key("taxa").begin_array();
+    std::vector<int> cwes;
+    for (const lcvuln::VulnInfo &v : lcvuln::kVulns)
+        if (std::find(cwes.begin(), cwes.end(), v.cwe) == cwes.end())
+            cwes.push_back(v.cwe);
+    std::sort(cwes.begin(), cwes.end());
+    for (int cwe : cwes) {
+        const lcvuln::VulnInfo *v = lcvuln::vuln_by_cwe(cwe);
+        j.begin_object();
+        j.kv("id", std::to_string(cwe));
+        if (v)
+            j.kv("name", v->name);
+        if (v) {
+            j.key("shortDescription").begin_object().kv("text", v->summary).end_object();
+            j.kv("helpUri", "https://cwe.mitre.org/data/definitions/" +
+                                 std::to_string(cwe) + ".html");
+        }
+        j.end_object();
+    }
+    j.end_array();
+    j.end_object().end_array();
 
     j.key("originalUriBaseIds").begin_object();
     j.key("SRCROOT")

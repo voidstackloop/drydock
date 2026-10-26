@@ -1,0 +1,210 @@
+{
+  "tool": {
+    "name": "leakcheck",
+    "version": "1.0.0"
+  },
+  "mode": "static",
+  "command": [
+    "eval/corpus/tarpit-c"
+  ],
+  "summary": {
+    "problems": 5,
+    "by_type": {
+      "double-free": 1,
+      "format-string": 1,
+      "memory-leak": 1,
+      "unbounded-copy": 1,
+      "unsafe-function": 1
+    },
+    "files_analyzed": 16
+  },
+  "findings": [
+    {
+      "id": 1,
+      "type": "double-free",
+      "category": "static",
+      "severity": "warning",
+      "message": "'buffer' may be released twice: on some paths it was already released at line 14",
+      "cwe": 415,
+      "vulnerability": "Double Free",
+      "vuln_severity": "critical",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tarpit-c/tarpitc/double_free.c",
+        "line": 18,
+        "column": 3,
+        "function": "main"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "main",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tarpit-c/tarpitc/double_free.c",
+            "line": 18,
+            "column": 3
+          }
+        ],
+        "alloc": [
+          {
+            "function": "main",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tarpit-c/tarpitc/double_free.c",
+            "line": 10
+          }
+        ],
+        "free": [
+          {
+            "function": "main",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tarpit-c/tarpitc/double_free.c",
+            "line": 14
+          }
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "type": "unbounded-copy",
+      "category": "static",
+      "severity": "warning",
+      "message": "strcpy() copies 'argv[1]', text that comes from outside the program, into the buffer 'buf' with no length check: a long enough value overwrites the stack; use snprintf() or check the length first",
+      "cwe": 120,
+      "vulnerability": "Classic Buffer Overflow",
+      "vuln_severity": "critical",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tarpit-c/tarpitc/heap_buffer_overflow.c",
+        "line": 12,
+        "column": 3,
+        "function": "main"
+      },
+      "occurrences": 1,
+      "flow": [
+        {
+          "function": "main",
+          "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tarpit-c/tarpitc/heap_buffer_overflow.c",
+          "line": 12,
+          "column": 15,
+          "what": "argv"
+        },
+        {
+          "function": "main",
+          "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tarpit-c/tarpitc/heap_buffer_overflow.c",
+          "line": 12,
+          "column": 3,
+          "what": "strcpy()"
+        }
+      ],
+      "stacks": {
+        "access": [
+          {
+            "function": "main",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tarpit-c/tarpitc/heap_buffer_overflow.c",
+            "line": 12,
+            "column": 3
+          }
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "type": "unsafe-function",
+      "category": "static",
+      "severity": "warning",
+      "message": "gets() reads a line with no limit on its length (it was removed from C11): any long input overflows the buffer; use fgets()",
+      "cwe": 676,
+      "vulnerability": "Use of Potentially Dangerous Function",
+      "vuln_severity": "high",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tarpit-c/tarpitc/stack_buffer_overflow.c",
+        "line": 13,
+        "column": 16,
+        "function": "main"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "main",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tarpit-c/tarpitc/stack_buffer_overflow.c",
+            "line": 13,
+            "column": 16
+          }
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "type": "format-string",
+      "category": "static",
+      "severity": "warning",
+      "message": "printf() is given 'format' as its format, and that text comes from outside the program: any % in it makes printf() read arguments that were never passed, and %n writes to memory; print it with printf(\"%s\", ...)",
+      "cwe": 134,
+      "vulnerability": "Use of Externally-Controlled Format String",
+      "vuln_severity": "high",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tarpit-c/tarpitc/uncontrolled_format_string.c",
+        "line": 14,
+        "column": 3,
+        "function": "main"
+      },
+      "occurrences": 1,
+      "flow": [
+        {
+          "function": "main",
+          "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tarpit-c/tarpitc/uncontrolled_format_string.c",
+          "line": 11,
+          "column": 19,
+          "what": "argv"
+        },
+        {
+          "function": "main",
+          "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tarpit-c/tarpitc/uncontrolled_format_string.c",
+          "line": 14,
+          "column": 3,
+          "what": "printf()"
+        }
+      ],
+      "stacks": {
+        "access": [
+          {
+            "function": "main",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tarpit-c/tarpitc/uncontrolled_format_string.c",
+            "line": 14,
+            "column": 3
+          }
+        ]
+      }
+    },
+    {
+      "id": 5,
+      "type": "memory-leak",
+      "category": "static",
+      "severity": "warning",
+      "message": "memory allocated with malloc() at line 12 ('buffer') is not released on every path that reaches this point",
+      "cwe": 401,
+      "vulnerability": "Missing Release of Memory after Effective Lifetime",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tarpit-c/tarpitc/use_after_free.c",
+        "line": 22,
+        "function": "main"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "main",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tarpit-c/tarpitc/use_after_free.c",
+            "line": 22
+          }
+        ],
+        "alloc": [
+          {
+            "function": "main",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tarpit-c/tarpitc/use_after_free.c",
+            "line": 12
+          }
+        ]
+      }
+    }
+  ],
+  "notes": []
+}

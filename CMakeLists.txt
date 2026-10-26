@@ -22,6 +22,8 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
 endif()
 
+option(LEAKCHECK_BUILD_PRELOAD "Build the dynamic-mode preload library" ON)
+
 # Unix preload sources. Linux builds them as an LD_PRELOAD .so; macOS as a
 # DYLD_INSERT_LIBRARIES dylib with darwin_interpose.c.
 set(lc_preload_unix
@@ -46,6 +48,7 @@ set(lc_preload_unix
     dynamic-engine/src/preload/unsafe_libc.cpp
 )
 
+if(LEAKCHECK_BUILD_PRELOAD)
 if(WIN32)
     # The runtime injected into the target on Windows (leakcheck_preload.dll). It hooks the heap
     # of the process, so like the Linux library it must not depend on the C++ runtime.
@@ -85,7 +88,10 @@ target_compile_options(leakcheck_preload PRIVATE
     -Wall -Wextra -g
     -fno-exceptions -fno-rtti -fno-threadsafe-statics -fno-omit-frame-pointer
     -fvisibility=hidden -fvisibility-inlines-hidden
-    -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free)
+    # The interpose table names the originals as `extern char name[]`, which
+    # collides with the compiler's built-in declarations of malloc, printf and
+    # friends where they are not functions here. No builtin knowledge, no clash.
+    -fno-builtin)
 target_link_options(leakcheck_preload PRIVATE -dynamiclib)
 if(LEAKCHECK_NOSTDLIBPP)
     target_link_options(leakcheck_preload PRIVATE -nostdlib++)
@@ -109,6 +115,15 @@ if(LEAKCHECK_NOSTDLIBPP)
 endif()
 target_link_libraries(leakcheck_preload PRIVATE ${CMAKE_DL_LIBS})
 endif()
+# Built clean even in a sanitizer build. The runtime is the target's allocator:
+# instrumenting it links a second allocator in front of the one it has to
+# install, and a target that is not itself instrumented then dies with SIGSEGV
+# before main, because the sanitizer runtime was never initialized. Without the
+# sanitizers here, the dynamic and cli suites can run with ASan watching the
+# driver and the report reader — the code that decides what is reported.
+target_compile_options(leakcheck_preload PRIVATE -fno-sanitize=all)
+target_link_options(leakcheck_preload PRIVATE -fno-sanitize=all)
+endif() # LEAKCHECK_BUILD_PRELOAD
 
 # Everything the CLI does, as a library so unit tests can link it.
 if(WIN32)
@@ -119,6 +134,7 @@ endif()
 add_library(leakcheck_core STATIC
     ${dynamic_engine_source}
     static-engine/src/analyzer.cpp
+    static-engine/src/cache.cpp
     static-engine/src/lexer.cpp
     static-engine/src/parser.cpp
     static-engine/src/scan.cpp
@@ -129,14 +145,24 @@ add_library(leakcheck_core STATIC
     static-engine/src/scan_engine.cpp
     static-engine/src/security.cpp
     static-engine/src/static_engine.cpp
+    reporter/src/baseline.cpp
     reporter/src/compose.cpp
     reporter/src/render_console.cpp
     reporter/src/render_json.cpp
+    reporter/src/render_junit.cpp
+    reporter/src/render_html.cpp
+    reporter/src/render_markdown.cpp
+    reporter/src/render_csv.cpp
+    reporter/src/render_gitlab.cpp
+    reporter/src/render_sonarqube.cpp
+    reporter/src/render_patch.cpp
     reporter/src/render_sarif.cpp
     reporter/src/report.cpp
+    reporter/src/rule_list.cpp
     reporter/src/runtime_stream.cpp
     reporter/src/suppress.cpp
     reporter/src/symbolize.cpp
+    shared/src/config.cpp
 )
 target_include_directories(leakcheck_core PUBLIC
     static-engine/include dynamic-engine/include reporter/include shared/include)
@@ -152,7 +178,7 @@ if(WIN32)
     target_link_options(leakcheck PRIVATE -static) # no MinGW DLLs next to leakcheck.exe
 endif()
 target_compile_options(leakcheck PRIVATE -Wall -Wextra -g)
-if(NOT WIN32)
+if(NOT WIN32 AND LEAKCHECK_BUILD_PRELOAD)
     add_dependencies(leakcheck leakcheck_preload)
 endif()
 
@@ -171,6 +197,26 @@ file(WRITE "${CMAKE_BINARY_DIR}/leakcheck_version.h"
 target_include_directories(leakcheck PRIVATE ${CMAKE_BINARY_DIR})
 target_compile_definitions(leakcheck PRIVATE
     LEAKCHECK_MODEL_PATH="${CMAKE_INSTALL_FULL_DATADIR}/leakcheck/model/pe-malware.ai")
+
+# libFuzzer targets (Phase 5). Configure with clang and sanitizer coverage:
+#   CC=clang CXX=clang++ cmake -S . -B build-fuzz -DLEAKCHECK_BUILD_FUZZERS=ON \
+#       -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -g -O1"
+#   cmake --build build-fuzz && ./build-fuzz/fuzz_scan -max_total_time=60
+option(LEAKCHECK_BUILD_FUZZERS "Build the libFuzzer targets (needs clang)" OFF)
+if(LEAKCHECK_BUILD_FUZZERS)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        message(FATAL_ERROR "LEAKCHECK_BUILD_FUZZERS needs clang (for -fsanitize=fuzzer)")
+    endif()
+    foreach(fuzzer lexer scan features suppress runtime model)
+        add_executable(fuzz_${fuzzer} fuzz/fuzz_${fuzzer}.cpp)
+        target_include_directories(fuzz_${fuzzer} PRIVATE
+            static-engine/src static-engine/include reporter/include shared/include)
+        target_link_libraries(fuzz_${fuzzer} PRIVATE leakcheck_core)
+        target_compile_options(fuzz_${fuzzer} PRIVATE
+            -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer -g -O1)
+        target_link_options(fuzz_${fuzzer} PRIVATE -fsanitize=fuzzer,address,undefined)
+    endforeach()
+endif()
 
 option(LEAKCHECK_BUILD_TESTS "Build the test programs and register tests" ON)
 if(LEAKCHECK_BUILD_TESTS)
@@ -196,7 +242,12 @@ if(LEAKCHECK_BUILD_TESTS)
         add_executable(test_${name} tests/dynamic/programs/${src})
         set_target_properties(test_${name} PROPERTIES
             OUTPUT_NAME ${name} RUNTIME_OUTPUT_DIRECTORY ${test_dir})
-        target_compile_options(test_${name} PRIVATE -g -O0 -fno-omit-frame-pointer -w)
+        target_compile_options(test_${name} PRIVATE -g -O0 -fno-omit-frame-pointer -w
+            # Their bugs are the point: the runtime has to see them happen, so the
+            # sanitizer's own allocator and error handling stay out of the target
+            # (see leakcheck_preload above). The driver is still instrumented.
+            -fno-sanitize=all)
+        target_link_options(test_${name} PRIVATE -fno-sanitize=all)
         target_link_libraries(test_${name} PRIVATE Threads::Threads)
     endforeach()
     if(WIN32)
@@ -209,8 +260,8 @@ if(LEAKCHECK_BUILD_TESTS)
         set_target_properties(test_heap_errors_nopie PROPERTIES
             OUTPUT_NAME heap_errors_nopie RUNTIME_OUTPUT_DIRECTORY ${test_dir}
             POSITION_INDEPENDENT_CODE OFF)
-        target_compile_options(test_heap_errors_nopie PRIVATE -g -O0 -fno-pie -w)
-        target_link_options(test_heap_errors_nopie PRIVATE -no-pie)
+        target_compile_options(test_heap_errors_nopie PRIVATE -g -O0 -fno-pie -w -fno-sanitize=all)
+        target_link_options(test_heap_errors_nopie PRIVATE -no-pie -fno-sanitize=all)
     endif()
 
     # Unit tests: white-box checks of each component.
@@ -276,9 +327,11 @@ endif()
 # where the binary looks for it; the model goes where the compiled-in path and
 # a relocated tree (bin/../share) both find it.
 install(TARGETS leakcheck RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(TARGETS leakcheck_preload
-    LIBRARY DESTINATION ${CMAKE_INSTALL_BINDIR}
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+if(LEAKCHECK_BUILD_PRELOAD)
+    install(TARGETS leakcheck_preload
+        LIBRARY DESTINATION ${CMAKE_INSTALL_BINDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
 install(DIRECTORY model/ DESTINATION ${CMAKE_INSTALL_DATADIR}/leakcheck/model
     FILES_MATCHING PATTERN "*.ai" PATTERN "*.json")
 install(FILES docs/leakcheck.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)

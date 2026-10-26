@@ -1,5 +1,6 @@
 #include "scan_engine.h"
 #include "ai_features.h"
+#include "config.h"
 #include "ai_model.h"
 #include "protocol.h"
 #include "report.h"
@@ -31,10 +32,49 @@ namespace {
 constexpr uintmax_t kMaxFile = 256u << 20; // bigger files are skipped
 constexpr size_t kReadMax = 16u << 20;     // the first bytes of a file are read
 
+inline std::string normalize_generic_path(const fs::path &p) {
+    std::string s = p.lexically_normal().generic_string();
+#ifdef _WIN32
+    const std::string orig = p.string();
+    if ((orig.rfind("\\\\", 0) == 0 || orig.rfind("//", 0) == 0) &&
+        s.rfind("//", 0) != 0 && s.rfind("/", 0) == 0) {
+        s = "/" + s;
+    }
+#endif
+    return s;
+}
+
+inline std::string to_absolute_generic_path(const fs::path &p) {
+#ifdef _WIN32
+    std::string s = p.string();
+    if (s.rfind("\\\\", 0) == 0 || s.rfind("//", 0) == 0) {
+        for (char &c : s) {
+            if (c == '\\')
+                c = '/';
+        }
+        return s;
+    }
+#endif
+    std::error_code ec;
+    return normalize_generic_path(fs::absolute(p, ec));
+}
+
 // `known` is the file's size when it was listed: resize to what will actually
 // be read, not to `cap` (a 16 MB resize zero-fills the whole buffer per file).
 bool read_prefix(const std::string &path, size_t cap, std::string *out, size_t known) {
-    std::ifstream in(path, std::ios::binary);
+    std::string open_path = path;
+#ifdef _WIN32
+    if (open_path.size() >= 2 && open_path[0] == '/' && open_path[1] != '/') {
+        if (open_path.find('/', 1) != std::string::npos) {
+            std::string candidate = "/" + open_path;
+            std::error_code ec;
+            if (fs::exists(fs::u8path(candidate), ec)) {
+                open_path = candidate;
+            }
+        }
+    }
+#endif
+    std::ifstream in(fs::u8path(open_path), std::ios::binary);
     if (!in)
         return false;
     out->resize(std::min(cap, known));
@@ -76,8 +116,19 @@ std::string shadowed_program(const std::string &path, const std::string &bytes,
     return {};
 }
 
-void add_finding(lcreport::Report *report, const std::string &abs, const lcscan::Hit &h,
-                 size_t more) {
+// The part of a path a fingerprint may depend on: relative to the scanned
+// tree, so the same checkout on another machine (or another drive letter)
+// gives the same finding the same identity.
+std::string key_path(const std::string &abs, const std::string &root) {
+    if (root.empty())
+        return abs;
+    std::error_code ec;
+    const fs::path rel = fs::relative(abs, root, ec);
+    return ec || rel.empty() ? abs : rel.generic_string();
+}
+
+void add_finding(lcreport::Report *report, const std::string &abs, const std::string &root,
+                 const lcscan::Hit &h, size_t more) {
     lcreport::Finding f;
     f.type = h.type;
     f.category = lcproto::kCatScan;
@@ -87,18 +138,19 @@ void add_finding(lcreport::Report *report, const std::string &abs, const lcscan:
     fr.function = h.offset ? hex_offset(h.offset) : std::string("the file");
     fr.line = 1;
     f.access.push_back(fr);
-    f.key = std::to_string(std::hash<std::string>{}(h.type + "|" + abs + "|" + h.message));
+    f.key = std::to_string(lcreport::stable_hash(h.type + "|" + key_path(abs, root) + "|" +
+                                                  h.message));
     report->findings.push_back(std::move(f));
 }
 
 } // namespace
 
 void scan_into_report(lcreport::Report *report, const std::string &abs, const std::string &bytes,
-                      bool malware) {
+                      bool malware, const std::string &root) {
     std::vector<size_t> more;
     const std::vector<lcscan::Hit> hits = lcscan::scan_file(abs, bytes, &more, malware);
     for (size_t i = 0; i < hits.size(); ++i)
-        add_finding(report, abs, hits[i], more[i]);
+        add_finding(report, abs, root, hits[i], more[i]);
     if (const std::string sys = shadowed_program(abs, bytes, lcscan::kind_of(bytes)); !sys.empty()) {
         lcscan::Hit h;
         h.type = lcproto::kMasquerade;
@@ -106,7 +158,7 @@ void scan_into_report(lcreport::Report *report, const std::string &abs, const st
                     "\" like the system's " + sys + ", but it is a different program: a "
                     "directory that comes first in PATH with such a file makes every "
                     "command of that name run this one";
-        add_finding(report, abs, h, 0);
+        add_finding(report, abs, root, h, 0);
     }
 }
 
@@ -119,13 +171,23 @@ struct FileResult {
     bool scanned = false;
 };
 
+struct Hidden {
+    size_t files = 0, dirs = 0;
+};
+
 // Every regular file under `target` (or the one file itself), in file order.
-bool collect_files(const std::string &target_text, std::vector<std::string> *files) {
+bool collect_files(const std::string &target_text, const Command &command,
+                   std::vector<std::string> *files, Hidden *hidden) {
     std::error_code ec;
     const fs::path target(target_text);
     if (!fs::exists(fs::symlink_status(target, ec)))
         return false;
     if (fs::is_directory(target, ec)) {
+        // shortcut: any negation keeps excluded directories traversable; add
+        // prefix-aware pruning if this shows up in large-tree profiles.
+        const bool can_reinclude = std::any_of(
+            command.excludes.begin(), command.excludes.end(),
+            [](const ExcludeRule &rule) { return rule.negated; });
         auto it = fs::recursive_directory_iterator(
             target, fs::directory_options::skip_permission_denied, ec);
         for (; !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
@@ -135,15 +197,39 @@ bool collect_files(const std::string &target_text, std::vector<std::string> *fil
                 continue;
             }
             std::error_code e2;
+            if (it->is_directory(e2)) {
+                if (lcconfig::excluded(p, command.excludes)) {
+                    if (!can_reinclude) {
+                        ++hidden->dirs;
+                        it.disable_recursion_pending();
+                    }
+                }
+                continue;
+            }
             if (it->is_symlink(e2) || !it->is_regular_file(e2))
                 continue;
+            if (lcconfig::excluded(p, command.excludes)) {
+                ++hidden->files;
+                continue;
+            }
             files->push_back(p);
         }
         std::sort(files->begin(), files->end());
-    } else {
+    } else if (!lcconfig::excluded(target.generic_string(), command.excludes)) {
         files->push_back(target.generic_string());
+    } else {
+        ++hidden->files;
     }
     return true;
+}
+
+void note_hidden(lcreport::Report *report, const Hidden &hidden) {
+    if (!hidden.files && !hidden.dirs)
+        return;
+    std::string text = std::to_string(hidden.files) + " file(s)";
+    if (hidden.dirs)
+        text += " and " + std::to_string(hidden.dirs) + " director(ies)";
+    report->notes.push_back(text + " excluded by leakcheck.toml, .leakcheckignore or --exclude");
 }
 
 // The directory the running binary is in, on every platform the tool ships
@@ -200,8 +286,8 @@ std::string default_model_path() {
 
 // The classifier's verdict as a finding: only above the threshold, and worded as
 // what it is -- a statistical guess about the shape of the file, not a rule.
-void ai_check(lcreport::Report *found, const std::string &abs, const std::string &bytes,
-              const lcscan::AiModel &model, double threshold) {
+void ai_check(lcreport::Report *found, const std::string &abs, const std::string &root,
+              const std::string &bytes, const lcscan::AiModel &model, double threshold) {
     std::vector<float> features;
     if (!lcscan::ai_pe_features(bytes, &features) || features.size() != model.features)
         return;
@@ -228,7 +314,7 @@ void ai_check(lcreport::Report *found, const std::string &abs, const std::string
         "threshold " + std::to_string(int(threshold * 100)) +
         "%). This is a guess from the shape of the file, not a matched rule: "
         "what it does is still to be checked";
-    add_finding(found, abs, h, 0);
+    add_finding(found, abs, root, h, 0);
 }
 
 // The classifier, when --ai asked for it: shared by all workers, read-only.
@@ -237,9 +323,22 @@ struct AiRun {
     double threshold = 0.5;
 };
 
-void scan_one(const std::string &file, bool malware, const AiRun &ai, FileResult *out) {
+void scan_one(const std::string &file, bool malware, const AiRun &ai, const std::string &root,
+              FileResult *out) {
+    std::string open_path = file;
+#ifdef _WIN32
+    if (open_path.size() >= 2 && open_path[0] == '/' && open_path[1] != '/') {
+        if (open_path.find('/', 1) != std::string::npos) {
+            std::string candidate = "/" + open_path;
+            std::error_code ec;
+            if (fs::exists(fs::u8path(candidate), ec)) {
+                open_path = candidate;
+            }
+        }
+    }
+#endif
     std::error_code ec;
-    const uintmax_t size = fs::file_size(file, ec);
+    const uintmax_t size = fs::file_size(fs::u8path(open_path), ec);
     if (ec) {
         out->notes.push_back("cannot read " + file);
         return;
@@ -256,19 +355,20 @@ void scan_one(const std::string &file, bool malware, const AiRun &ai, FileResult
     if (size > kReadMax)
         out->notes.push_back("scanned first 16 MB of " + file);
     out->scanned = true;
-    const std::string abs = fs::absolute(file, ec).lexically_normal().generic_string();
-    scan_into_report(&out->found, abs, bytes, malware);
+    const std::string abs = to_absolute_generic_path(file);
+    scan_into_report(&out->found, abs, bytes, malware, root);
     if (ai.model)
-        ai_check(&out->found, abs, bytes, *ai.model, ai.threshold);
+        ai_check(&out->found, abs, root, bytes, *ai.model, ai.threshold);
 }
 
 } // namespace
 
 int run_scan(const Command &command) {
     std::vector<std::string> files;
-    if (!collect_files(command.target, &files)) {
+    Hidden hidden;
+    if (!collect_files(command.target, command, &files, &hidden)) {
         std::fprintf(stderr, "leakcheck: '%s' does not exist\n", command.target.c_str());
-        return 1;
+        return kExitCouldNotAnalyse;
     }
 
     lcscan::AiModel model;
@@ -291,7 +391,9 @@ int run_scan(const Command &command) {
 
     lcreport::Report report;
     report.mode = "scan";
+    report.min_severity = command.min_severity;
     report.command.push_back(command.target);
+    note_hidden(&report, hidden);
 
     // Files are independent, and a scan is mostly waiting for the disk and
     // running over bytes, so several are scanned at once. Each file's result is
@@ -301,11 +403,21 @@ int run_scan(const Command &command) {
     size_t workers = command.jobs > 0 ? size_t(command.jobs)
                                       : std::max<size_t>(1, std::thread::hardware_concurrency());
     workers = std::min(workers, files.size());
+    // Fingerprints are relative to the scanned tree, not to the machine's
+    // idea of where it is.
+    std::error_code root_ec;
+    fs::path root = fs::absolute(command.target, root_ec);
+    if (!root_ec) {
+        std::error_code dir_ec;
+        if (!fs::is_directory(root, dir_ec))
+            root = root.parent_path();
+    }
+    const std::string root_key = root_ec ? std::string() : root.generic_string();
     std::atomic<size_t> next{0};
     auto work = [&] {
         for (size_t i = next++; i < files.size(); i = next++) {
             try {
-                scan_one(files[i], command.malware, ai, &results[i]);
+                scan_one(files[i], command.malware, ai, root_key, &results[i]);
             } catch (const std::exception &e) { // (out of memory on a huge file)
                 results[i].notes.push_back("cannot scan " + files[i] + ": " + e.what());
             }
@@ -331,31 +443,51 @@ int run_scan(const Command &command) {
         report.notes.push_back("no files found");
     if (command.malware)
         lcreport::add_composite_findings(report);
+    lcreport::apply_rule_policy(report, command.rule_policy, command.strict);
 
     std::string error;
     if (!command.suppressions.empty() &&
         !lcreport::apply_suppressions(command.suppressions, report, &error)) {
         std::fprintf(stderr, "leakcheck: %s\n", error.c_str());
-        return 1;
+        return kExitConfig;
+    }
+    if (!command.baseline_path.empty()) {
+        if (command.baseline_mode == "write") {
+            if (!lcreport::write_baseline(command.baseline_path, report, &error)) {
+                std::fprintf(stderr, "leakcheck: %s\n", error.c_str());
+                return kExitConfig;
+            }
+            report.notes.push_back("baseline written: " + std::to_string(report.findings.size()) +
+                                   " finding(s) to " + command.baseline_path);
+        } else {
+            size_t known = 0;
+            if (!lcreport::apply_baseline(command.baseline_path, report, &known, &error)) {
+                std::fprintf(stderr, "leakcheck: %s\n", error.c_str());
+                return kExitConfig;
+            }
+        }
     }
     if (!lcreport::write_report(report, command.format, command.output, &error)) {
         std::fprintf(stderr, "leakcheck: %s\n", error.c_str());
-        return 1;
+        return kExitCouldNotAnalyse;
     }
     size_t problems = 0;
     for (const auto &f : report.findings)
-        problems += lcreport::is_problem(f);
+        problems += lcreport::is_problem_at(f, command.min_severity);
     if (!command.output.empty())
         std::fprintf(stderr, "leakcheck: %zu problem(s) in %zu file(s); report written to %s\n",
                      problems, report.files_analyzed, command.output.c_str());
-    return problems ? command.error_exitcode : 0;
+    if (command.baseline_mode == "write" && !command.baseline_path.empty())
+        return kExitClean;
+    return problems ? command.error_exitcode : kExitClean;
 }
 
 int run_ai_features(const Command &command) {
     std::vector<std::string> files;
-    if (!collect_files(command.target, &files)) {
+    Hidden hidden;
+    if (!collect_files(command.target, command, &files, &hidden)) {
         std::fprintf(stderr, "leakcheck: '%s' does not exist\n", command.target.c_str());
-        return 1;
+        return kExitCouldNotAnalyse;
     }
     // The header names the columns, so the trainer can check them against the
     // model's own order instead of trusting that both sides agree.
@@ -392,7 +524,7 @@ int run_ai_features(const Command &command) {
                     continue;
                 }
                 ++judged;
-                rows[i].path = fs::absolute(file, ec).lexically_normal().generic_string();
+                rows[i].path = to_absolute_generic_path(file);
                 rows[i].values = lcscan::ai_features_line(features);
             } catch (const std::exception &) { // out of memory on a huge file
             }

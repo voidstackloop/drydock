@@ -32,6 +32,17 @@ jobs:
         run: ctest --test-dir build --output-on-failure
       - name: Graded evaluation
         run: python3 eval/run_eval.py --build build --out "$RUNNER_TEMP/RESULTS.md"
+      # The saved reports make the number reproducible without a 2 GB clone: an
+      # enabled rule over the 2% budget fails, and an edited report fails the
+      # diff. Relabelling needs the trees; gating does not.
+      - name: Precision on the reference corpus
+        run: |
+          python3 tools/precision.py --build build --reuse --write-doc
+          git diff --exit-code eval/PRECISION.md
+      - name: Generated docs are current
+        run: |
+          python3 tools/cwe_matrix.py --check
+          python3 tools/gen_rule_docs.py --check
       - name: Install and identify
         env:
           STAGE: ${{ runner.temp }}/stage
@@ -39,16 +50,33 @@ jobs:
           cmake --install build --prefix "$STAGE"
           "$STAGE/bin/leakcheck" --version | tee version.txt
           grep -q 'classifier: .*pe-malware\.ai' version.txt
+      # Dogfooding: the tool scans its own tree, and a finding that is not in
+      # the checked-in baseline fails the build. The baseline holds the
+      # signature strings the scanner itself has to contain, and a few docs
+      # that quote them; test fixtures are excluded because they are meant to
+      # be found.
+      - name: Scan its own tree against the baseline
+        run: >-
+          ./build/leakcheck scan . --exclude 'build*' --exclude data
+          --exclude .venv-train --exclude 'fuzz/corpus/**' --exclude 'tests/**'
+          --exclude 'eval/cases/**' --exclude .leakcheck-baseline
+          --baseline compare .leakcheck-baseline
+      - name: Determinism digests
+        run: python3 tools/determinism.py --leakcheck build/leakcheck --out determinism-linux.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: determinism-linux
+          path: determinism-linux.json
+          if-no-files-found: error
 
   macos:
     name: macos
     runs-on: macos-15
     timeout-minutes: 30
-    # Known: the preload does not compile on Darwin yet (it calls sigabbrev_np
-    # and sighandler_t, which are glibc, and fseeko without a declaration).
-    # Non-blocking so the failure stays visible without reddening main; remove
-    # this line when the runtime builds there.
-    continue-on-error: true
+    # This gates: the Darwin blockers are fixed (sys_signame instead of
+    # sigabbrev_np, sig_t instead of sighandler_t, stdio included for
+    # fseeko/ftello, and the interpose table no longer names
+    # accept4/pipe2/fexecve).
     steps:
       - uses: actions/checkout@v7
       - name: Install Ninja
@@ -66,6 +94,30 @@ jobs:
       - name: Unit tests and the command-line suites
         run: ctest --test-dir build --output-on-failure
 
+  # Reports only, without the runtime: this job proves the JSON and SARIF are
+  # the same bytes as on the other two systems, and stays fast enough that a
+  # report regression is not confused with a runtime one.
+  macos-reports:
+    name: macos-reports
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Ninja
+        run: brew install ninja
+      - name: Build without the runtime
+        run: |
+          cmake -S . -B build-reports -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DLEAKCHECK_BUILD_PRELOAD=OFF -DLEAKCHECK_BUILD_TESTS=OFF
+          cmake --build build-reports --parallel
+      - name: Determinism digests
+        run: python3 tools/determinism.py --leakcheck build-reports/leakcheck --out determinism-macos.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: determinism-macos
+          path: determinism-macos.json
+          if-no-files-found: error
+
   windows:
     name: windows
     runs-on: windows-latest
@@ -78,8 +130,93 @@ jobs:
           update: false
           install: mingw-w64-x86_64-gcc mingw-w64-x86_64-python
           path-type: inherit
-      # The MinGW build, without -Test: the static suite intermittently loses a
-      # cross-file flow report on Windows (the same commit passed and then
-      # failed), so it is not a gate until that is fixed.
-      - name: Build with MinGW
-        run: pwsh -File build-windows.ps1
+      # This gates: the lost cross-file flow report was a transient file
+      # lock on fresh temp files, fixed by retrying the open in read_file.
+      - name: Build and test with MinGW
+        run: pwsh -File build-windows.ps1 -Test
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+      - name: Determinism digests
+        run: python tools/determinism.py --leakcheck build/leakcheck.exe --out determinism-windows.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: determinism-windows
+          path: determinism-windows.json
+          if-no-files-found: error
+
+  # Every suite runs with both sanitizers on except unit_runtime, which frees the
+  # same block twice on purpose to check the runtime's own double-free detector:
+  # that is an ASan error, and ASan owns the allocator in this build whatever the
+  # test links. The runtime and the deliberately buggy test programs are built
+  # without the sanitizers for the same reason (see CMakeLists.txt), so what the
+  # dynamic and cli suites watch is the driver and the report reader — the code
+  # that decides what is reported.
+  sanitizers:
+    name: sanitizers
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
+      UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build python3
+      - name: Configure with ASan and UBSan
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g"
+          -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g"
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Every suite but the runtime's own
+        run: ctest --test-dir build --output-on-failure -E '^unit_runtime$'
+
+  fuzz:
+    name: fuzz
+    # Pinned: clang 18 and the runner's libstdc++ have to be a pair this
+    # compiler can parse; a rolling image can ship headers clang is older than.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install clang and Ninja
+        run: sudo apt-get update && sudo apt-get install -y clang ninja-build
+      - name: Configure the fuzz targets
+        run: >
+          CC=clang CXX=clang++ cmake -S . -B build-fuzz -G Ninja
+          -DLEAKCHECK_BUILD_FUZZERS=ON -DLEAKCHECK_BUILD_TESTS=OFF
+          -DLEAKCHECK_BUILD_PRELOAD=OFF
+          -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g -O1"
+      - name: Build
+        run: cmake --build build-fuzz --parallel
+      - name: Every target, every seed
+        run: sh fuzz/smoke.sh build-fuzz 60
+      - name: Keep what crashed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashes
+          path: |
+            crash-*
+            timeout-*
+            oom-*
+          if-no-files-found: ignore
+
+  determinism:
+    name: determinism
+    needs: [linux, macos-reports, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: determinism-*
+          path: digests
+          merge-multiple: true
+      # Byte-identical JSON and SARIF from all three systems for the same files.
+      - name: Compare the reports from every system
+        run: |
+          ls -l digests
+          python3 tools/determinism.py --compare digests/*.json

@@ -176,10 +176,9 @@ and `bin/libleakcheck_preload.so` (they must stay together), the model under
 under `share/doc/leakcheck/`. The model is looked for next to the project root,
 at the configured prefix, and beside the binary (`bin/../share/leakcheck/model`),
 so an unpacked archive works wherever it is put. Release archives for Linux
-x86_64 and aarch64 and for Windows x86_64 are built from a `v*` tag, with
-`SHA256SUMS` and a build-provenance attestation; macOS joins them when the
-injected runtime compiles there (see the known issues in
-[docs/ROADMAP.md](ROADMAP.md)).
+x86_64 and aarch64, Windows x86_64 and macOS (universal: arm64 + x86_64, with
+the dylib beside the binary) are built from a `v*` tag, with `SHA256SUMS`, a
+CycloneDX SBOM and a build-provenance attestation.
 
 On Windows, see "Windows" below: `.\build-windows.ps1` needs only MinGW-w64.
 
@@ -231,10 +230,25 @@ Example:
 
 | Option | Meaning |
 |---|---|
-| `-o, --output <file>` | Write the report to a file instead of stdout (required for `-f json` and `-f sarif` in dynamic mode, so the program's own output is not mixed into the report) |
-| `-f, --format <fmt>` | `console` (default), `json`, or `sarif` (SARIF 2.1.0, for code-scanning services) |
+| `-o, --output <file>` | Write the report to a file instead of stdout; `-` explicitly selects stdout. Dynamic structured reports require a real file so the program's own output cannot corrupt them |
+| `-f, --format <fmt>` | `console` (default), `json`, `sarif` (SARIF 2.1.0), `junit` (XML), `html` (interactive HTML), `markdown` / `md` (PR summary), `csv` (audit export), `gitlab` (Code Quality JSON), `sonarqube` (Generic Issue Import), or `patch` (remediation diff) |
 | `-s, --suppressions <file>` | Ignore findings matching rules (see below) |
+| `--audit-suppressions` | Print every rule with its reason and expiry, and fail (3) if one has expired. Needs `-s` or `suppressions =` in the config |
+| `--baseline write <file>` | Record every current finding in `<file>`; this run exits 0 |
+| `--baseline compare <file>` | Report and gate only on findings that are not in `<file>` |
+| `--exclude <glob>` | Skip files and directories that match; repeatable. The pattern is relative to the working directory, or to the config file for patterns written there |
+| `--min-severity <s>` | Weakest severity that fails the gate: `error`, `warning` (default) or `note` |
 | `--error-exitcode <n>` | Exit status when problems are found, 1-255 (default 2) |
+| `--config <file>` | Use this file instead of the nearest `leakcheck.toml` |
+| `--no-config` | Ignore `leakcheck.toml` and `.leakcheckignore` |
+| `--print-config` | Print the effective settings (file, then flags) and exit, so a failing gate can be explained in one command |
+| `--rule-list` | Print every rule with its CWE, summary, default severity and whether a default run reports it (`-f json` for an array) |
+| `--enable-rule <id>` | Enable one rule, including a strict-only rule, without enabling every strict check; repeatable |
+| `--disable-rule <id>` | Remove one rule from every report format and the exit-status calculation; repeatable |
+| `--diff-base <ref>` | `static`: only report findings on lines changed relative to git `<ref>` |
+| `--changed-only <ref>` | `static`: only files that differ from git `<ref>` |
+| `--metrics`, `--stats` | Append codebase security metrics, issue density, and technical debt score to the report |
+| `--no-cache` | `static`: do not read or write the incremental cache |
 | `--malware` | Also look for the malware families of `shared/include/malware.h` (virus, worm, trojan, ransomware, spyware, rootkit, RAT, botnet, ... see "Malware families" below). Works in `scan`, `static` and `dynamic` mode; much slower than the default checks, so it is opt-in |
 | `--ai` | `scan` only: also ask the trained classifier about every Windows program read (see "The classifier" below). Needs `model/pe-malware.ai`; about twice as slow on a folder of PE files, no cost on other files |
 | `--ai-model <file>` | The model to use instead of `model/pe-malware.ai` |
@@ -252,14 +266,71 @@ Example:
 
 ### Exit status
 
-* `--error-exitcode` (2) if any error or warning was reported;
-* otherwise the program's own status (`128 + signal` if it was killed, or its exit code, including a clean 2);
-* `0` when clean and the program exited 0, `1` for usage errors, a json/sarif dynamic report with no `-o`, or when nothing could be analysed
-  (for example a statically linked program), `127` if the program cannot start.
+The contract a gate can rely on:
+
+| Status | Meaning | Locked in by |
+|---|---|---|
+| `0` | Clean at or above `--min-severity`, or a baseline was written | `cli_usage_errors`, `static_baseline_only_gates_new_findings` |
+| `2` | Findings not in the baseline (or `--error-exitcode`, if set). A dynamic run with no findings returns the program's own status: `128 + signal`, its exit code, `127` if it cannot start | the static, scan and dynamic suites |
+| `1` | Nothing could be analysed: usage error, missing target, a model that will not load, a static analysis that read no files, a dynamic run whose runtime produced no data | `cli_usage_errors`, `static_clean_code_and_formats` |
+| `3` | The config, baseline or suppressions are wrong: a typo in `leakcheck.toml`, a missing or corrupt baseline, an expired suppression rule, a malformed `.leakcheckignore` | `static_baseline_only_gates_new_findings`, `static_config_excludes_and_ignore_file`, `static_suppressions_have_an_owner_and_an_expiry` |
+
+`--error-exitcode` changes only the `2` row. A gate that cannot read its own
+baseline fails with 3 rather than passing: a broken baseline must never hide
+findings.
+
+### Config file
+
+`leakcheck.toml` is discovered upwards from the target; the nearest one wins.
+A flag always overrides the file, and a section overrides the top level. Paths
+(`suppressions`, `baseline`) are relative to the config file.
+
+```toml
+format = "sarif"
+min-severity = "error"
+exclude = ["vendor/**", "build/**", "*.generated.c"]
+disable-rules = ["persistence", "packed-binary"]
+suppressions = "ci/leakcheck.supp"
+baseline = "ci/leakcheck-baseline.txt"
+
+[static]
+format = "junit"      # CI reads this one
+jobs = 8
+enable-rules = ["null-dereference"] # opt into one strict-only rule
+
+[scan]
+min-severity = "error"  # the classifier is a guess; do not gate on warnings
+
+[rules.timing-attack]
+severity = "error"      # upgrade timing-attack to gate-failing error
+
+[rules.insecure-tempfile]
+severity = "warning"
+```
+
+Rule IDs come from `--rule-list`. Global policy is applied first, a mode
+section overrides it, and command-line `--enable-rule` / `--disable-rule`
+overrides both. Per-rule severity overrides can be defined under `[rules.<id>]` with `severity = "error"|"warning"|"note"`. The last setting for an ID wins. An unknown ID or enabling and
+disabling the same ID in one config section is a configuration error (exit 3).
+
+### Interactive Triage
+
+```sh
+leakcheck triage report.json
+```
+
+The interactive triage command lets developers inspect findings one by one with contextual code snippets, and mark each finding to accept as bug, generate an automated fix patch, or append an exclusion to the baseline.
+
+`.leakcheckignore` is discovered the same way; one glob per line, `#` starts a
+comment. A later pattern starting with `!` re-includes matching files, so
+`vendor/**` followed by `!vendor/ours/**` scans the maintained subtree. Excluded
+files are counted in the report's notes, so a gate that hides too much says so.
+Use `\!important.c` or `\#generated.c` to match a literal leading `!` or `#`.
 
 ### Suppressions
 
-One rule per line, `<type>:<pattern>`; `#` starts a comment. The type is a
+One rule per line, `<type>:<pattern>`, optionally followed by
+`reason="..."` and `expires=YYYY-MM-DD`; `#` starts a comment. The type is a
 finding type (`memory-leak`, `double-free`, ...), `leak`, or `*`. The pattern is
 a shell glob matched against every frame's function name, source file and
 module path.
@@ -270,7 +341,12 @@ double-free:legacy_cleanup
 *:third_party/*
 leak:near:*/python3*
 leak:top:PyMem_*
+memory-leak:*legacy/* reason="tracked in JIRA-412" expires=2026-06-30
 ```
+
+A rule with an expiry date fails the run with status 3 after that date, so a
+silence has to be looked at again. `--audit-suppressions` prints every rule,
+its reason and the days it has left.
 
 A pattern is matched against every frame of the stack, so `leak:*python3*`
 also hides what a C extension allocated and the interpreter then called. With
@@ -555,7 +631,20 @@ the route it took (see [the route](#the-route-text-from-outside-took)).
 | `ssrf` | `curl_easy_setopt()` is configured with `CURLOPT_URL` pointing to an unvalidated URL from outside input. |
 | `xss` | Output formatting functions (`printf`, `fprintf`, `dprintf`) emit unescaped outside text into an HTML response. |
 | `off-by-one` | A local array of capacity `N` is indexed at `N` or at `sizeof(arr)` without subtracting 1, corrupting adjacent stack memory. |
+| `out-of-bounds-write` | A local array of known size is written at a constant index beyond its end or below zero, corrupting adjacent memory. Only constant indices are reported. |
+| `out-of-bounds-read` | A local array of known size is read at a constant index beyond its end or below zero. Only constant indices are reported. |
 | `integer-overflow` | Arithmetic (multiplication or addition) on untrusted inputs can wrap around or overflow, bypassing length/bounds checks. |
+| `insecure-tempfile` | Creation of temporary file using predictable names (`mktemp`, `tmpnam`, `tempnam`) or without atomic `O_CREAT \| O_EXCL` flags in public temporary directories. |
+| `hardcoded-key-iv` | Hard-coded cryptographic key or initialization vector embedded in code and passed to symmetric ciphers. |
+| `unchecked-security-return` | Return value of a security-critical function (e.g. `cap_set_proc`, `setuid`) is ignored. |
+| `uncleared-sensitive-data` | Sensitive credential memory is scrubbed using standard `memset()`, which optimizing compilers remove as dead stores. |
+| `return-stack-address` | Returning the address of a local stack variable or buffer across function returns. |
+| `uninitialized-variable` | A scalar local variable is read before assignment. |
+| `timing-attack` | Cryptographic digest, token, or MAC comparison using non-constant-time functions (`memcmp`, `strcmp`). |
+| `zip-slip` | Extraction of archive files (`e->filename`) into destination paths without canonical directory traversal validation. |
+| `insecure-deserialization` | Untrusted input passed to unsafe deserialization engines (`PyMarshal_ReadObjectFromString`, `text_iarchive`). |
+| `insecure-bind-all` | Listening network socket bound to `INADDR_ANY` (`0.0.0.0`), exposing internal services to all interfaces. |
+| `high-entropy-secret` | High informational Shannon entropy string literal ($\ge 4.3$ bits/char) indicating embedded credentials or API keys. |
 
 ### The route text from outside took
 

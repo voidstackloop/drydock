@@ -1,0 +1,25 @@
+# name	url	ref	note
+# Pinned trees for eval/PRECISION.md. `tools/fetch_corpus.py` clones them into
+# eval/corpus/<name> (ignored by git, cached in CI). A ref may be a tag or a
+# commit; a commit is fetched directly, so the measurement is reproducible.
+busybox	https://github.com/mirror/busybox.git	371fe9f	single-binary userland, C
+lighttpd1.4	https://github.com/lighttpd/lighttpd1.4.git	2ddc513	event-driven web server, C
+miniupnp	https://github.com/miniupnp/miniupnp.git	f8c4f4c	UPnP daemons, C
+openssh-portable	https://github.com/openssh/openssh-portable.git	26b1363	network daemon, C
+redis	https://github.com/redis/redis.git	5e332ca	in-memory database, C
+tinyproxy	https://github.com/tinyproxy/tinyproxy.git	ec0745d	small HTTP proxy, C
+tarpit-c	https://github.com/ShiftLeftSecurity/tarpit-c.git	6c2b5d6	labelled static-analysis benchmark
+zlib	https://github.com/madler/zlib.git	v1.3.1	compression library, C
+lua	https://github.com/lua/lua.git	v5.4.7	interpreter, C
+libpng	https://github.com/pnggroup/libpng.git	v1.6.43	image library, C
+libjpeg-turbo	https://github.com/libjpeg-turbo/libjpeg-turbo.git	3.0.3	image codec, C and assembly
+cJSON	https://github.com/DaveGamble/cJSON.git	v1.7.18	small JSON parser, C
+jq	https://github.com/jqlang/jq.git	jq-1.7.1	JSON processor, C
+nginx	https://github.com/nginx/nginx.git	release-1.26.1	web server, C
+curl	https://github.com/curl/curl.git	curl-8_8_0	network client, C
+libuv	https://github.com/libuv/libuv.git	v1.48.0	event loop, C
+mosquitto	https://github.com/eclipse/mosquitto.git	v2.0.18	MQTT broker, C
+htop	https://github.com/htop-dev/htop.git	3.3.0	process viewer, C
+libgit2	https://github.com/libgit2/libgit2.git	v1.8.1	git implementation, C
+zstd	https://github.com/facebook/zstd.git	v1.5.6	compression library, C
+juliet	https://github.com/arichardson/juliet-test-suite-c.git	f88433e3	synthetic: known-bad cases, not counted as a real project

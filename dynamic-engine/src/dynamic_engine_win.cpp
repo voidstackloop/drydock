@@ -210,6 +210,7 @@ int run_dynamic_analysis(const Command &command) {
                                "runtime was loaded");
     lcreport::symbolize(report);
     lcreport::apply_default_suppressions(report);
+    lcreport::apply_rule_policy(report, command.rule_policy, command.strict);
 
     std::string error;
     if (!command.suppressions.empty() &&

@@ -1,0 +1,261 @@
+{
+  "tool": {
+    "name": "leakcheck",
+    "version": "1.0.0"
+  },
+  "mode": "static",
+  "command": [
+    "eval/corpus/tinyproxy"
+  ],
+  "summary": {
+    "problems": 8,
+    "by_type": {
+      "hardcoded-secret": 1,
+      "heap-use-after-free": 2,
+      "null-dereference": 3,
+      "resource-leak": 2
+    },
+    "files_analyzed": 65
+  },
+  "findings": [
+    {
+      "id": 1,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'q' is dereferenced at line 438 after being set to NULL at line 436: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tinyproxy/src/conf.c",
+        "line": 438,
+        "column": 17,
+        "function": "config_parse"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "config_parse",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tinyproxy/src/conf.c",
+            "line": 438,
+            "column": 17
+          }
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "type": "heap-use-after-free",
+      "category": "static",
+      "severity": "warning",
+      "message": "'connptr->client_fd' is used after it was released at line 85",
+      "cwe": 416,
+      "vulnerability": "Use After Free",
+      "vuln_severity": "critical",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tinyproxy/src/conns.c",
+        "line": 87,
+        "column": 38,
+        "function": "conn_destroy_contents"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "conn_destroy_contents",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tinyproxy/src/conns.c",
+            "line": 87,
+            "column": 38
+          }
+        ],
+        "free": [
+          {
+            "function": "conn_destroy_contents",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tinyproxy/src/conns.c",
+            "line": 85
+          }
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "type": "heap-use-after-free",
+      "category": "static",
+      "severity": "warning",
+      "message": "'connptr->server_fd' is used after it was released at line 90",
+      "cwe": 416,
+      "vulnerability": "Use After Free",
+      "vuln_severity": "critical",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tinyproxy/src/conns.c",
+        "line": 92,
+        "column": 38,
+        "function": "conn_destroy_contents"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "conn_destroy_contents",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tinyproxy/src/conns.c",
+            "line": 92,
+            "column": 38
+          }
+        ],
+        "free": [
+          {
+            "function": "conn_destroy_contents",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tinyproxy/src/conns.c",
+            "line": 90
+          }
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "type": "resource-leak",
+      "category": "static",
+      "severity": "warning",
+      "message": "FILE stream from fopen() at line 202 ('infile') is not closed before this return",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tinyproxy/src/html-error.c",
+        "line": 208,
+        "column": 17,
+        "function": "send_http_error_message"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "send_http_error_message",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tinyproxy/src/html-error.c",
+            "line": 208,
+            "column": 17
+          }
+        ],
+        "alloc": [
+          {
+            "function": "send_http_error_message",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tinyproxy/src/html-error.c",
+            "line": 202
+          }
+        ]
+      }
+    },
+    {
+      "id": 5,
+      "type": "hardcoded-secret",
+      "category": "static",
+      "severity": "warning",
+      "message": "an Authorization header contains a credential: it is known to everyone who has the binary; read it from the environment",
+      "cwe": 798,
+      "vulnerability": "Use of Hard-coded Credentials",
+      "vuln_severity": "high",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tinyproxy/src/reqs.c",
+        "line": 296,
+        "column": 39,
+        "function": "establish_http_connection"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "establish_http_connection",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tinyproxy/src/reqs.c",
+            "line": 296,
+            "column": 39
+          }
+        ]
+      }
+    },
+    {
+      "id": 6,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'status' is dereferenced at line 149 after being set to NULL at line 138: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tinyproxy/src/reverse-proxy.c",
+        "line": 149,
+        "column": 33,
+        "function": "reverse_rewrite_url"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "reverse_rewrite_url",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tinyproxy/src/reverse-proxy.c",
+            "line": 149,
+            "column": 33
+          }
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "type": "resource-leak",
+      "category": "static",
+      "severity": "warning",
+      "message": "FILE stream from fopen() at line 76 ('statfile') is not closed before this return",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tinyproxy/src/stats.c",
+        "line": 81,
+        "column": 25,
+        "function": "showstats"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "showstats",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tinyproxy/src/stats.c",
+            "line": 81,
+            "column": 25
+          }
+        ],
+        "alloc": [
+          {
+            "function": "showstats",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tinyproxy/src/stats.c",
+            "line": 76
+          }
+        ]
+      }
+    },
+    {
+      "id": 8,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'up' is dereferenced at line 219 via -> after being set to NULL at line 215: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tinyproxy/src/upstream.c",
+        "line": 219,
+        "column": 46,
+        "function": "upstream_get"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "upstream_get",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/tinyproxy/src/upstream.c",
+            "line": 219,
+            "column": 46
+          }
+        ]
+      }
+    }
+  ],
+  "notes": []
+}

@@ -3691,6 +3691,18 @@ int main(int argc, char **argv) {
              std::string("off-by-one@3 off-by-one@4 integer-overflow@8 integer-overflow@9"));
 }
 
+TEST(security_out_of_bounds_read_and_write) {
+    CHECK_EQ(security(code(R"(
+void w1(void) { char buf[16]; buf[20] = 0; }
+void w2(void) { char buf[16]; buf[-1] = 0; }
+void r1(void) { char buf[16]; char c = buf[20]; }
+void r2(void) { char buf[16]; char d = buf[-1]; }
+void ok(void) { char buf[16]; buf[0] = 1; buf[15] = 2; char c = buf[5]; }
+)")),
+             std::string("out-of-bounds-write@1 out-of-bounds-write@2 out-of-bounds-read@3 out-of-bounds-read@4"));
+}
+
+
 TEST(security_mkstemp_of_an_outside_template) {
     CHECK_EQ(security(code(R"(
 void bad(char **argv) { mkstemp(argv[1]); }
@@ -4809,6 +4821,79 @@ void ok(const char *p) { realpath(p, NULL); }
 void big(const char *p) { char buf[4096]; realpath(p, buf); }
 )")),
              std::string("unbounded-copy@1"));
+}
+
+TEST(security_new_features_cwe_coverage) {
+    // 1. insecure-tempfile
+    CHECK_EQ(security(code(R"(
+void a(void) { fopen("/tmp/temp%d.txt", "w"); }
+void b(void) { fopen("/var/tmp/temp_cache", "w"); }
+void c(void) { fopen("/etc/passwd", "r"); }
+)")),
+             std::string("insecure-tempfile@1 insecure-tempfile@2"));
+
+    // 2. hardcoded-key-iv
+    CHECK_EQ(security(code(R"(
+void a(void) { AES_set_encrypt_key("0123456789abcdef", 128, &key); }
+void b(void) { EVP_CipherInit_ex(ctx, cipher, NULL, "mysecretkey12345", "fixed_iv_1234567", 1); }
+)")),
+             std::string("hardcoded-key-iv@1 hardcoded-key-iv@2"));
+
+    // 3. unchecked-security-return
+    CHECK_EQ(security(code(R"(
+void a(void) { cap_set_proc(caps); }
+void b(void) { if (cap_set_proc(caps) != 0) { abort(); } }
+)")),
+             std::string("unchecked-security-return@1"));
+
+    // 4. uncleared-sensitive-data
+    CHECK_EQ(security(code(R"(
+void a(void) { char password[32]; memset(password, 0, sizeof(password)); }
+void b(void) { char buf[32]; memset(buf, 0, sizeof(buf)); }
+)")),
+             std::string("uncleared-sensitive-data@1"));
+
+    // 5. return-stack-address
+    CHECK_EQ(security(code(R"(
+char *a(void) { char buf[64]; return buf; }
+char *b(void) { char *p = malloc(64); return p; }
+)")),
+             std::string("return-stack-address@1"));
+
+    // 6. uninitialized-variable
+    CHECK_EQ(security(code(R"(
+int a(void) { int x; return x; }
+int b(void) { int y = 5; return y; }
+)")),
+             std::string("uninitialized-variable@1"));
+
+    // 7. timing-attack
+    CHECK_EQ(security(code(R"(
+int a(char *mac1, char *mac2) { return memcmp(mac1, mac2, 32); }
+int b(char *hmac, char *input) { return strcmp(hmac, input); }
+int c(char *a, char *b) { return strcmp(a, b); }
+)")),
+             std::string("timing-attack@1 timing-attack@2"));
+
+    // 8. zip-slip
+    CHECK_EQ(security(code(R"(
+void a(struct entry *e) { fopen(e->filename, "w"); }
+void b(const char *safe) { fopen(safe, "w"); }
+)")),
+             std::string("zip-slip@1"));
+
+    // 9. insecure-bind-all
+    CHECK_EQ(security(code(R"(
+void a(int s, struct sockaddr_in *addr) { addr->sin_addr.s_addr = INADDR_ANY; bind(s, (struct sockaddr*)addr, sizeof(*addr)); }
+)")),
+             std::string("insecure-bind-all@1"));
+
+    // 10. high-entropy-secret
+    CHECK_EQ(security(code(R"(
+void a(void) { const char *k = "4kP9zL2mX7qR5vT1wY8bC3jN6"; }
+void b(void) { const char *normal = "this is a normal string of text"; }
+)")),
+             std::string("high-entropy-secret@1"));
 }
 
 TEST(survives_garbage_input) {

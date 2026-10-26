@@ -218,4 +218,44 @@ TEST(ai_model_refuses_what_it_cannot_read) {
     unlink(no_trees.c_str());
 }
 
+// A model file is untrusted input. Every count in it sizes something, so a
+// fuzzed ``tree -1`` or a child index past the tree is rejected by the reader
+// rather than throwing length_error, reading out of bounds or reserving
+// gigabytes.
+TEST(ai_model_refuses_impossible_counts) {
+    AiModel model;
+    std::string error;
+    const char *head = "leakcheck-ai 1\nfeatures 3\n";
+
+    const std::string negative_nodes = temp_file(
+        std::string(head) + "trees 1\ntree\n-1 0 0 0 1 0\nend\n");
+    CHECK(!model.load(negative_nodes, &error));
+    CHECK(error.find("claims") != std::string::npos);
+    unlink(negative_nodes.c_str());
+
+    const std::string too_many_trees = temp_file(
+        std::string(head) + "trees 1000001\n");
+    CHECK(!model.load(too_many_trees, &error));
+    CHECK(error.find("trees must be") != std::string::npos);
+    unlink(too_many_trees.c_str());
+
+    const std::string too_many_features = temp_file(
+        "leakcheck-ai 1\nfeatures 4097\ntrees 1\n");
+    CHECK(!model.load(too_many_features, &error));
+    CHECK(error.find("features must be") != std::string::npos);
+    unlink(too_many_features.c_str());
+
+    const std::string child_out_of_range = temp_file(
+        std::string(head) + "trees 1\ntree 2\n0 10 1 9 0 0\n-1 0 0 0 1 1\nend\n");
+    CHECK(!model.load(child_out_of_range, &error));
+    CHECK(error.find("outside the tree") != std::string::npos);
+    unlink(child_out_of_range.c_str());
+
+    const std::string bad_leaf_flag = temp_file(
+        std::string(head) + "trees 1\ntree 1\n-1 0 0 0 7 0\nend\n");
+    CHECK(!model.load(bad_leaf_flag, &error));
+    CHECK(error.find("neither 0 nor 1") != std::string::npos);
+    unlink(bad_leaf_flag.c_str());
+}
+
 TEST_MAIN()

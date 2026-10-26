@@ -226,6 +226,11 @@ const std::set<std::string> kMallocFns = {"malloc",
                                           "calloc",
                                           "strdup",
                                           "strndup",
+                                          "xmalloc",
+                                          "xcalloc",
+                                          "xstrdup",
+                                          "xstrndup",
+                                          "xasprintf",
                                           "aligned_alloc",
                                           "memalign",
                                           "valloc",
@@ -233,7 +238,7 @@ const std::set<std::string> kMallocFns = {"malloc",
                                           "wcsdup",
                                           "canonicalize_file_name",
                                           "get_current_dir_name"};
-const std::set<std::string> kReallocFns = {"realloc", "reallocarray"};
+const std::set<std::string> kReallocFns = {"realloc", "reallocarray", "xreallocarray"};
 // Calls that store what they make through their first argument, &p.
 // minus_one says how the result reports failure: -1 (asprintf), or any
 // nonzero value (posix_memalign).
@@ -245,6 +250,8 @@ struct OutAlloc {
 const std::map<std::string, OutAlloc> kOutAllocs = {
     {"asprintf", {true, SiteKind::Malloc}},
     {"vasprintf", {true, SiteKind::Malloc}},
+    {"xasprintf", {true, SiteKind::Malloc}},
+    {"xvasprintf", {true, SiteKind::Malloc}},
     {"posix_memalign", {false, SiteKind::Malloc}},
     {"pthread_create", {false, SiteKind::Thread}},
     {"getaddrinfo", {false, SiteKind::AddrList, 3}},
@@ -320,7 +327,9 @@ const std::set<std::string> kTerminators = {
     "abort",      "quick_exit", "longjmp",
     "siglongjmp", "terminate",  "__builtin_unreachable",
     "err",        "errx",       "verr",
-    "verrx"};
+    "verrx",
+    "fatal",      "fatal_f",    "fatal_fr",
+    "sshfatal"};
 // Calls that read their pointer arguments but never take ownership.
 const std::set<std::string> kNonOwning = {
     "strlen", "strnlen", "strcpy", "strncpy", "strcat", "strncat", "strcmp",
@@ -1262,10 +1271,9 @@ class Analyzer {
         if (p.empty())
             return;
         if (pe != e) {
-            // free(p + 4), free(p++): not the start of the block
+            // free(p + 4): not the start of the block. Postfix ++/-- passes the original value.
             if (pe < e &&
-                (t[pe].is("+") || t[pe].is("-") || t[pe].is("++") ||
-                 t[pe].is("--")) &&
+                (t[pe].is("+") || t[pe].is("-")) &&
                 tracked(st, p))
                 report("invalid-free",
                        std::string(how) + " of '" + p +
@@ -1291,6 +1299,18 @@ class Analyzer {
             // p holds a value we never saw released (on an earlier loop
             // iteration the same name may have held another one).
             int s = external_site(p, at.line);
+            if (st.bits[s] & kFreed) {
+                // Reassigned since that release: the earlier free consumed
+                // that block, so this one is a new object. Reusing the site
+                // would cry double free on reassignment between frees.
+                Site ns;
+                ns.kind = SiteKind::External;
+                ns.line = at.line;
+                ns.var = p;
+                sites_.push_back(ns);
+                s = int(sites_.size() - 1);
+                external_[p] = s;
+            }
             st.pts[p] = {s};
             st.bits[s] = kExternal;
         }
@@ -1454,6 +1474,44 @@ class Analyzer {
         for (auto &[p, pt] : st.pts)
             if (p != holder && pt.erase(s))
                 pt.insert(0);
+    }
+
+    // The binding lhs is replaced, or its block ends: lhs->field named
+    // the old object. Forget those keys (self moves keep the traversal
+    // merged) and the sites nothing still names: an earlier
+    // loop pass may have released them, while the next pass reuses the same
+    // site for a new object.
+    void forget_binding(State &st, const std::string &lhs, bool self_ref) {
+        if (self_ref || lhs.find_first_of(".-:[") != std::string::npos)
+            return;
+        std::set<int> parked;
+        for (const auto &[loc, s] : parked_)
+            parked.insert(s);
+        auto dead = [&](const std::string &key) {
+            auto itp = st.pts.find(key);
+            if (itp == st.pts.end())
+                return;
+            for (int s : itp->second)
+                if (s && !referenced_elsewhere(st, s, key) &&
+                    !parked.count(s)) {
+                    st.bits.erase(s);
+                    st.freed_at.erase(s);
+                }
+        };
+        dead(lhs);
+        for (auto it = st.pts.begin(); it != st.pts.end();) {
+            const std::string &k = it->first;
+            if (k.size() > lhs.size() && k.compare(0, lhs.size(), lhs) == 0 &&
+                (k[lhs.size()] == '.' || k[lhs.size()] == '-' ||
+                 k[lhs.size()] == '[')) {
+                dead(k);
+                st.shifted.erase(k);
+                it = st.pts.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        st.shifted.erase(lhs);
     }
 
     // The local p in an argument written "&p", or "".
@@ -1691,9 +1749,18 @@ class Analyzer {
             } else if (whole_call &&
                        (kMallocFns.count(fname) ||
                         allocates_buffer(fname, t, open, e - 1))) {
-                value = {
-                    site_for(t[open - 1], SiteKind::Malloc, lhs, fname + "()")};
-                fresh_alloc = true;
+                // xasprintf fills through &p in OpenSSH but returns a string
+                // in busybox: the &p form is an out-param call, and this
+                // variable keeps the unknown value {0} for it.
+                bool mo = false;
+                const bool is_out =
+                    kOutAllocs.count(fname) > 0 &&
+                    !out_alloc_call(t, b, e, &mo).empty();
+                if (!is_out) {
+                    value = {site_for(t[open - 1], SiteKind::Malloc, lhs,
+                                      fname + "()")};
+                    fresh_alloc = true;
+                }
             } else if (const SiteKind k =
                            whole_call ? summarized(fname) : SiteKind::Unknown;
                        k != SiteKind::Unknown) {
@@ -1821,6 +1888,8 @@ class Analyzer {
                 if (s && fresh_alloc)
                     st.bits[s] = kAlloc | kEscaped;
             if (where == Lhs::NonLocal || fresh_alloc)
+                forget_binding(st, lhs, self_ref);
+            if (where == Lhs::NonLocal || fresh_alloc)
                 st.pts[lhs] = value;
             st.shifted.erase(lhs);
             return;
@@ -1831,6 +1900,7 @@ class Analyzer {
         for (int s : value)
             if (s && fresh_alloc)
                 st.bits[s] = kAlloc;
+        forget_binding(st, lhs, self_ref);
         st.pts[lhs] = value;
         st.shifted.erase(lhs);
         // A released object nothing refers to any more is gone. Forgetting
@@ -2178,9 +2248,12 @@ class Analyzer {
                     ptr_locals_.insert(d.name);
                 // Normally the block's end released the previous binding;
                 // one left over came round a loop through continue/goto.
-                if (!hides)
+                if (!hides) {
                     lose_value(st, d.name, {}, false, t[0],
                                "goes out of scope (loop iteration ends)");
+                    // A new object: the old one's members are gone with it.
+                    forget_binding(st, d.name, false);
+                }
                 st.pts.erase(d.name);
                 st.shifted.erase(d.name);
                 external_.erase(
@@ -2397,8 +2470,24 @@ class Analyzer {
                 const int s = site_for(t[name_at], kind, p, fname + "()");
                 if (grows) // the old buffer lives on in the new one
                     escape(st, p);
-                else // {}: what an earlier loop iteration made here is lost too
+                else { // {}: what an earlier loop iteration made here is lost too
                     lose_value(st, p, {}, false, t[name_at], "is overwritten");
+                    // The new object replaces the old one, like an assignment
+                    // does (unless the call also reads it, as in
+                    // xasprintf(&p, "%s", p)).
+                    bool self = false;
+                    for (size_t ai = 0; ai < args.size() && !self; ++ai) {
+                        if (ai == out_idx)
+                            continue;
+                        auto abae = args[ai];
+                        for (size_t k = abae.first; k < abae.second; ++k)
+                            if (t[k].kind == Tok::Ident && t[k].text == p) {
+                                self = true;
+                                break;
+                            }
+                    }
+                    forget_binding(st, p, self);
+                }
                 renew(st, s, p);
                 st.bits[s] = kAlloc;
                 st.pts[p] = {s};
@@ -3346,6 +3435,10 @@ class Analyzer {
             auto it = sc.hidden.find(name);
             if (it == sc.hidden.end()) {
                 if (st.live && !body) {
+                    // Only this block named these: an earlier loop pass may
+                    // have released them, while the next pass reuses the
+                    // same sites for new objects.
+                    forget_binding(st, name, false);
                     st.pts.erase(name);
                     st.shifted.erase(name);
                 }

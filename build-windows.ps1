@@ -27,10 +27,16 @@ $rtinc = @("dynamic-engine/src/preload", "dynamic-engine/src/win", "shared/inclu
 $core = "static-engine/src/analyzer.cpp", "static-engine/src/lexer.cpp", "static-engine/src/parser.cpp",
         "static-engine/src/ai_features.cpp", "static-engine/src/ai_model.cpp",
         "static-engine/src/malware_scan.cpp", "static-engine/src/malware_table.cpp",
+        "static-engine/src/cache.cpp",
         "static-engine/src/scan.cpp", "static-engine/src/scan_engine.cpp", "static-engine/src/security.cpp",
-        "static-engine/src/static_engine.cpp", "reporter/src/compose.cpp", "reporter/src/render_console.cpp", "reporter/src/render_json.cpp",
-        "reporter/src/render_sarif.cpp", "reporter/src/report.cpp", "reporter/src/runtime_stream.cpp",
-        "reporter/src/suppress.cpp", "reporter/src/symbolize.cpp", "dynamic-engine/src/dynamic_engine_win.cpp"
+        "static-engine/src/static_engine.cpp", "reporter/src/baseline.cpp", "reporter/src/compose.cpp",
+        "reporter/src/render_console.cpp", "reporter/src/render_html.cpp", "reporter/src/render_json.cpp",
+        "reporter/src/render_markdown.cpp", "reporter/src/render_csv.cpp",
+        "reporter/src/render_gitlab.cpp", "reporter/src/render_sonarqube.cpp", "reporter/src/render_patch.cpp",
+        "reporter/src/render_junit.cpp", "reporter/src/render_sarif.cpp", "reporter/src/report.cpp",
+        "reporter/src/rule_list.cpp", "reporter/src/runtime_stream.cpp",
+        "reporter/src/suppress.cpp", "reporter/src/symbolize.cpp",
+        "shared/src/config.cpp", "dynamic-engine/src/dynamic_engine_win.cpp"
 $runtime = "dynamic-engine/src/preload/behavior.cpp", "dynamic-engine/src/preload/blocks.cpp",
         "dynamic-engine/src/preload/heap.cpp", "dynamic-engine/src/preload/leakscan.cpp",
         "dynamic-engine/src/preload/report.cpp", "dynamic-engine/src/preload/resources.cpp",
@@ -105,9 +111,7 @@ $mainObj = Compile @("src/main.cpp") ($inc + @("-I" + $Build)) "main_"
 # the manifest that makes leakcheck.exe's strings UTF-8 (a user name with a dotless i, say)
 $windres = $Cxx -replace "g\+\+(\.exe)?$", "windres"
 $rcObj = Join-Path $obj "leakcheck_rc.o"
-Push-Location (P "src/windows")
-& $windres -O coff -i leakcheck.rc -o $rcObj
-Pop-Location
+& $windres -O coff -i (P "src/windows/leakcheck.rc") -o $rcObj
 if ($LASTEXITCODE -ne 0) { throw "windres failed" }
 Link (Join-Path $Build "leakcheck.exe") (@($mainObj) + $coreObjs + @($rcObj, "-static", "-pthread"))
 Write-Host "built $(Join-Path $Build 'leakcheck.exe')"

@@ -203,7 +203,13 @@ static void reverse_shell(void) {
 
 // ---- other programs
 
-static HANDLE victim(void) { return run("cmd.exe /c ping -n 8 127.0.0.1 >nul", NULL, FALSE); }
+static HANDLE victim(void) {
+    char exe[MAX_PATH];
+    GetModuleFileNameA(NULL, exe, sizeof exe);
+    char cmd[MAX_PATH + 32];
+    snprintf(cmd, sizeof cmd, "\"%s\" sleep", exe);
+    return run(cmd, NULL, FALSE);
+}
 static void kill(HANDLE p) {
     TerminateProcess(p, 0);
     CloseHandle(p);
@@ -325,7 +331,8 @@ int main(int argc, char **argv) {
     make_root();
     for (int i = 1; i < argc; i++) {
         const char *c = argv[i];
-        if (!strcmp(c, "startup")) startup_folder();
+        if (!strcmp(c, "sleep")) { Sleep(10000); return 0; }
+        else if (!strcmp(c, "startup")) startup_folder();
         else if (!strcmp(c, "startup-read")) startup_folder_read();
         else if (!strcmp(c, "credentials")) credential_files();
         else if (!strcmp(c, "public-key")) public_key();

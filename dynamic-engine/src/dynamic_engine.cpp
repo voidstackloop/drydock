@@ -196,6 +196,7 @@ int run_dynamic_analysis(const Command &command) {
 
     lcreport::Report report;
     report.mode = "dynamic";
+    report.min_severity = command.min_severity;
     report.command.push_back(command.target);
     report.command.insert(report.command.end(), command.target_args.begin(),
                           command.target_args.end());
@@ -219,27 +220,47 @@ int run_dynamic_analysis(const Command &command) {
 #endif
     lcreport::symbolize(report);
     lcreport::apply_default_suppressions(report);
+    lcreport::apply_rule_policy(report, command.rule_policy, command.strict);
 
     std::string error;
     if (!command.suppressions.empty() &&
         !lcreport::apply_suppressions(command.suppressions, report, &error)) {
         fprintf(stderr, "leakcheck: %s\n", error.c_str());
-        return 1;
+        return kExitConfig;
+    }
+    if (!command.baseline_path.empty()) {
+        if (command.baseline_mode == "write") {
+            if (!lcreport::write_baseline(command.baseline_path, report, &error)) {
+                fprintf(stderr, "leakcheck: %s\n", error.c_str());
+                return kExitConfig;
+            }
+            report.notes.push_back("baseline written: " + std::to_string(report.findings.size()) +
+                                   " finding(s) to " + command.baseline_path);
+        } else {
+            size_t known = 0;
+            if (!lcreport::apply_baseline(command.baseline_path, report, &known, &error)) {
+                fprintf(stderr, "leakcheck: %s\n", error.c_str());
+                return kExitConfig;
+            }
+        }
     }
     if (!lcreport::write_report(report, command.format, command.output,
                                 &error)) {
         fprintf(stderr, "leakcheck: %s\n", error.c_str());
-        return 1;
+        return kExitCouldNotAnalyse;
     }
 
     size_t problems = 0;
     for (const auto &f : report.findings)
-        problems += lcreport::is_problem(f);
+        problems += lcreport::is_problem_at(f, command.min_severity);
     if (!command.output.empty())
         fprintf(stderr,
                 "leakcheck: %zu problem(s) found; report written to %s\n",
                 problems, command.output.c_str());
 
+    // Writing a baseline is setup, not a verdict.
+    if (command.baseline_mode == "write" && !command.baseline_path.empty())
+        return kExitClean;
     // Problems outrank the program's own status: a leak that exits 1 is still
     // the error code, and a clean program that exits 2 keeps 2.
     if (problems)

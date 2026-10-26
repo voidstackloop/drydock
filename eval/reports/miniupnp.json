@@ -1,0 +1,1819 @@
+{
+  "tool": {
+    "name": "leakcheck",
+    "version": "1.0.0"
+  },
+  "mode": "static",
+  "command": [
+    "eval/corpus/miniupnp"
+  ],
+  "summary": {
+    "problems": 61,
+    "by_type": {
+      "credential-access": 9,
+      "heap-use-after-free": 2,
+      "insecure-permissions": 2,
+      "integer-overflow": 2,
+      "memory-leak": 8,
+      "null-dereference": 17,
+      "path-traversal": 1,
+      "resource-leak": 9,
+      "tls-no-verify": 1,
+      "unchecked-stream": 10
+    },
+    "files_analyzed": 220
+  },
+  "findings": [
+    {
+      "id": 1,
+      "type": "resource-leak",
+      "category": "static",
+      "severity": "warning",
+      "message": "file descriptor from open() at line 47 ('i') is not closed before this return",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/minissdpd/daemonize.c",
+        "line": 54,
+        "column": 3,
+        "function": "daemonize"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "daemonize",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/minissdpd/daemonize.c",
+            "line": 54,
+            "column": 3
+          }
+        ],
+        "alloc": [
+          {
+            "function": "daemonize",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/minissdpd/daemonize.c",
+            "line": 47
+          }
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "type": "credential-access",
+      "category": "static",
+      "severity": "warning",
+      "message": "socket() opens a raw socket: it can read or forge packets on the network",
+      "malware_family": "Credential Stealer",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/minissdpd/getroute.c",
+        "line": 94,
+        "column": 7,
+        "function": "get_src_for_route_to"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "get_src_for_route_to",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/minissdpd/getroute.c",
+            "line": 94,
+            "column": 7
+          }
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "type": "credential-access",
+      "category": "static",
+      "severity": "warning",
+      "message": "socket() opens a raw socket: it can read or forge packets on the network",
+      "malware_family": "Credential Stealer",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/minissdpd/ifacewatch.c",
+        "line": 53,
+        "column": 6,
+        "function": "OpenAndConfInterfaceWatchSocket"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "OpenAndConfInterfaceWatchSocket",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/minissdpd/ifacewatch.c",
+            "line": 53,
+            "column": 6
+          }
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "type": "resource-leak",
+      "category": "static",
+      "severity": "warning",
+      "message": "socket from socket() at line 50 ('s') is not closed before this return",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/minissdpd/listifaces.c",
+        "line": 62,
+        "column": 5,
+        "function": "listifaces"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "listifaces",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/minissdpd/listifaces.c",
+            "line": 62,
+            "column": 5
+          }
+        ],
+        "alloc": [
+          {
+            "function": "listifaces",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/minissdpd/listifaces.c",
+            "line": 50
+          }
+        ]
+      }
+    },
+    {
+      "id": 5,
+      "type": "insecure-permissions",
+      "category": "static",
+      "severity": "warning",
+      "message": "chmod() makes the file writable by every user: another user can change what the program reads later; give the owner (and a group) the write bit only",
+      "cwe": 732,
+      "vulnerability": "Incorrect Permission Assignment for Critical Resource",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/minissdpd/minissdpd.c",
+        "line": 857,
+        "column": 5,
+        "function": "OpenUnixSocket"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "OpenUnixSocket",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/minissdpd/minissdpd.c",
+            "line": 857,
+            "column": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": 6,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'newserv' is dereferenced at line 1156 via -> after being set to NULL at line 1134: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/minissdpd/minissdpd.c",
+        "line": 1156,
+        "column": 8,
+        "function": "processRequestSub"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "processRequestSub",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/minissdpd/minissdpd.c",
+            "line": 1156,
+            "column": 8
+          }
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'deltadev' is dereferenced at line 1580 after being set to NULL at line 1272: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/minissdpd/minissdpd.c",
+        "line": 1580,
+        "column": 18,
+        "function": "main"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "main",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/minissdpd/minissdpd.c",
+            "line": 1580,
+            "column": 18
+          }
+        ]
+      }
+    },
+    {
+      "id": 8,
+      "type": "resource-leak",
+      "category": "static",
+      "severity": "warning",
+      "message": "socket from socket() at line 56 ('s') is not closed before this return",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/minissdpd/showminissdpdnotif.c",
+        "line": 62,
+        "column": 3,
+        "function": "main"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "main",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/minissdpd/showminissdpdnotif.c",
+            "line": 62,
+            "column": 3
+          }
+        ],
+        "alloc": [
+          {
+            "function": "main",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/minissdpd/showminissdpdnotif.c",
+            "line": 56
+          }
+        ]
+      }
+    },
+    {
+      "id": 9,
+      "type": "integer-overflow",
+      "category": "static",
+      "severity": "warning",
+      "message": "condition 'resp+n<p+l' adds untrusted values: the sum can overflow and wrap around, bypassing bounds checks; verify bounds before addition (e.g. 'a > max - b')",
+      "cwe": 190,
+      "vulnerability": "Integer Overflow or Wraparound",
+      "vuln_severity": "high",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/minissdpd/testminissdpd.c",
+        "line": 27,
+        "column": 10,
+        "function": "printversion"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "printversion",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/minissdpd/testminissdpd.c",
+            "line": 27,
+            "column": 10
+          }
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'port' is dereferenced at line 287 after being set to NULL at line 284: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpc-async/miniupnpc-async.c",
+        "line": 287,
+        "column": 6,
+        "function": "parseURL"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "parseURL",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpc-async/miniupnpc-async.c",
+            "line": 287,
+            "column": 6
+          }
+        ]
+      }
+    },
+    {
+      "id": 11,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'port' is dereferenced at line 331 after being set to NULL at line 328: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpc-libevent/miniupnpc-libevent.c",
+        "line": 331,
+        "column": 6,
+        "function": "parseURL"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "parseURL",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpc-libevent/miniupnpc-libevent.c",
+            "line": 331,
+            "column": 6
+          }
+        ]
+      }
+    },
+    {
+      "id": 12,
+      "type": "resource-leak",
+      "category": "static",
+      "severity": "warning",
+      "message": "socket from socket() at line 147 ('s') is not closed before this return",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpc-libevent/upnpc-libevent.c",
+        "line": 161,
+        "column": 3,
+        "function": "find_local_address"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "find_local_address",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpc-libevent/upnpc-libevent.c",
+            "line": 161,
+            "column": 3
+          }
+        ],
+        "alloc": [
+          {
+            "function": "find_local_address",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpc-libevent/upnpc-libevent.c",
+            "line": 147
+          }
+        ]
+      }
+    },
+    {
+      "id": 13,
+      "type": "resource-leak",
+      "category": "static",
+      "severity": "warning",
+      "message": "socket from socket() at line 572 ('s') is not closed before this return",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpc/src/minihttptestserver.c",
+        "line": 593,
+        "column": 3,
+        "function": "server"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "server",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpc/src/minihttptestserver.c",
+            "line": 593,
+            "column": 3
+          }
+        ],
+        "alloc": [
+          {
+            "function": "server",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpc/src/minihttptestserver.c",
+            "line": 572
+          }
+        ]
+      }
+    },
+    {
+      "id": 14,
+      "type": "resource-leak",
+      "category": "static",
+      "severity": "warning",
+      "message": "socket from accept() at line 650 ('c') is not closed before this return",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpc/src/minihttptestserver.c",
+        "line": 662,
+        "column": 4,
+        "function": "server"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "server",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpc/src/minihttptestserver.c",
+            "line": 662,
+            "column": 4
+          }
+        ],
+        "alloc": [
+          {
+            "function": "server",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpc/src/minihttptestserver.c",
+            "line": 650
+          }
+        ]
+      }
+    },
+    {
+      "id": 15,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'bufsize' is dereferenced at line 219 after being set to NULL at line 117: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpc/src/miniupnpc.c",
+        "line": 219,
+        "column": 5,
+        "function": "simpleUPnPcommand"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "simpleUPnPcommand",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpc/src/miniupnpc.c",
+            "line": 219,
+            "column": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": 16,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'port' is dereferenced at line 571 after being set to NULL at line 567: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpc/src/miniwget.c",
+        "line": 571,
+        "column": 6,
+        "function": "parseURL"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "parseURL",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpc/src/miniwget.c",
+            "line": 571,
+            "column": 6
+          }
+        ]
+      }
+    },
+    {
+      "id": 17,
+      "type": "resource-leak",
+      "category": "static",
+      "severity": "warning",
+      "message": "FILE stream from fopen() at line 73 ('f') is not closed before this return",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpc/src/testupnpreplyparse.c",
+        "line": 83,
+        "column": 4,
+        "function": "main"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "main",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpc/src/testupnpreplyparse.c",
+            "line": 83,
+            "column": 4
+          }
+        ],
+        "alloc": [
+          {
+            "function": "main",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpc/src/testupnpreplyparse.c",
+            "line": 73
+          }
+        ]
+      }
+    },
+    {
+      "id": 18,
+      "type": "memory-leak",
+      "category": "static",
+      "severity": "warning",
+      "message": "memory allocated with malloc() at line 99 ('buffer') is not released before this return",
+      "cwe": 401,
+      "vulnerability": "Missing Release of Memory after Effective Lifetime",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpc/src/testupnpreplyparse.c",
+        "line": 116,
+        "column": 4,
+        "function": "main"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "main",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpc/src/testupnpreplyparse.c",
+            "line": 116,
+            "column": 4
+          }
+        ],
+        "alloc": [
+          {
+            "function": "main",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpc/src/testupnpreplyparse.c",
+            "line": 99
+          }
+        ]
+      }
+    },
+    {
+      "id": 19,
+      "type": "unchecked-stream",
+      "category": "static",
+      "severity": "warning",
+      "message": "'fin' from fopen() at line 44 may be NULL here: fgets() uses it before any test, which crashes when the open fails",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpc/wingenminiupnpcstrings.c",
+        "line": 45,
+        "column": 2,
+        "function": "main"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "main",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpc/wingenminiupnpcstrings.c",
+            "line": 45,
+            "column": 2
+          }
+        ],
+        "alloc": [
+          {
+            "function": "main",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpc/wingenminiupnpcstrings.c",
+            "line": 44
+          }
+        ]
+      }
+    },
+    {
+      "id": 20,
+      "type": "credential-access",
+      "category": "static",
+      "severity": "warning",
+      "message": "socket() opens a raw socket: it can read or forge packets on the network",
+      "malware_family": "Credential Stealer",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/bsd/getroute.c",
+        "line": 61,
+        "column": 6,
+        "function": "get_src_for_route_to"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "get_src_for_route_to",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/bsd/getroute.c",
+            "line": 61,
+            "column": 6
+          }
+        ]
+      }
+    },
+    {
+      "id": 21,
+      "type": "credential-access",
+      "category": "static",
+      "severity": "warning",
+      "message": "socket() opens a raw socket: it can read or forge packets on the network",
+      "malware_family": "Credential Stealer",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/bsd/ifacewatcher.c",
+        "line": 32,
+        "column": 6,
+        "function": "OpenAndConfInterfaceWatchSocket"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "OpenAndConfInterfaceWatchSocket",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/bsd/ifacewatcher.c",
+            "line": 32,
+            "column": 6
+          }
+        ]
+      }
+    },
+    {
+      "id": 22,
+      "type": "resource-leak",
+      "category": "static",
+      "severity": "warning",
+      "message": "file descriptor from open() at line 47 ('i') is not closed before this return",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/daemonize.c",
+        "line": 54,
+        "column": 3,
+        "function": "daemonize"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "daemonize",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/daemonize.c",
+            "line": 54,
+            "column": 3
+          }
+        ],
+        "alloc": [
+          {
+            "function": "daemonize",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/daemonize.c",
+            "line": 47
+          }
+        ]
+      }
+    },
+    {
+      "id": 23,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'last' is dereferenced at line 174 via -> after being set to NULL at line 168: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/ipf/ipfrdr.c",
+        "line": 174,
+        "column": 5,
+        "function": "del_redirect_desc"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "del_redirect_desc",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/ipf/ipfrdr.c",
+            "line": 174,
+            "column": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": 24,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'number' is dereferenced at line 786 after being set to NULL at line 739: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/ipf/ipfrdr.c",
+        "line": 786,
+        "column": 7,
+        "function": "get_portmappings_in_range"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "get_portmappings_in_range",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/ipf/ipfrdr.c",
+            "line": 786,
+            "column": 7
+          }
+        ]
+      }
+    },
+    {
+      "id": 25,
+      "type": "credential-access",
+      "category": "static",
+      "severity": "warning",
+      "message": "socket() opens a raw socket: it can read or forge packets on the network",
+      "malware_family": "Credential Stealer",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/ipfw/ipfwaux.c",
+        "line": 23,
+        "column": 12,
+        "function": "ipfw_exec"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "ipfw_exec",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/ipfw/ipfwaux.c",
+            "line": 23,
+            "column": 12
+          }
+        ]
+      }
+    },
+    {
+      "id": 26,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'number' is dereferenced at line 467 after being set to NULL at line 459: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/ipfw/ipfwrdr.c",
+        "line": 467,
+        "column": 7,
+        "function": "get_portmappings_in_range"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "get_portmappings_in_range",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/ipfw/ipfwrdr.c",
+            "line": 467,
+            "column": 7
+          }
+        ]
+      }
+    },
+    {
+      "id": 27,
+      "type": "credential-access",
+      "category": "static",
+      "severity": "warning",
+      "message": "socket() opens a raw socket: it can read or forge packets on the network",
+      "malware_family": "Credential Stealer",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/linux/getroute.c",
+        "line": 104,
+        "column": 7,
+        "function": "get_src_for_route_to"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "get_src_for_route_to",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/linux/getroute.c",
+            "line": 104,
+            "column": 7
+          }
+        ]
+      }
+    },
+    {
+      "id": 28,
+      "type": "credential-access",
+      "category": "static",
+      "severity": "warning",
+      "message": "socket() opens a raw socket: it can read or forge packets on the network",
+      "malware_family": "Credential Stealer",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/linux/ifacewatcher.c",
+        "line": 71,
+        "column": 6,
+        "function": "OpenAndConfInterfaceWatchSocket"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "OpenAndConfInterfaceWatchSocket",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/linux/ifacewatcher.c",
+            "line": 71,
+            "column": 6
+          }
+        ]
+      }
+    },
+    {
+      "id": 29,
+      "type": "credential-access",
+      "category": "static",
+      "severity": "warning",
+      "message": "socket() opens a raw socket: it can read or forge packets on the network",
+      "malware_family": "Credential Stealer",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/mac/getroute.c",
+        "line": 61,
+        "column": 6,
+        "function": "get_src_for_route_to"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "get_src_for_route_to",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/mac/getroute.c",
+            "line": 61,
+            "column": 6
+          }
+        ]
+      }
+    },
+    {
+      "id": 30,
+      "type": "credential-access",
+      "category": "static",
+      "severity": "warning",
+      "message": "socket() opens a raw socket: it can read or forge packets on the network",
+      "malware_family": "Credential Stealer",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/mac/ifacewatcher.c",
+        "line": 32,
+        "column": 6,
+        "function": "OpenAndConfInterfaceWatchSocket"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "OpenAndConfInterfaceWatchSocket",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/mac/ifacewatcher.c",
+            "line": 32,
+            "column": 6
+          }
+        ]
+      }
+    },
+    {
+      "id": 31,
+      "type": "memory-leak",
+      "category": "static",
+      "severity": "warning",
+      "message": "memory allocated with malloc() at line 1820 ('new_e') is not released before this return",
+      "cwe": 401,
+      "vulnerability": "Missing Release of Memory after Effective Lifetime",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/netfilter/iptcrdr.c",
+        "line": 1840,
+        "column": 3,
+        "function": "update_portmapping"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "update_portmapping",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/netfilter/iptcrdr.c",
+            "line": 1840,
+            "column": 3
+          }
+        ],
+        "alloc": [
+          {
+            "function": "update_portmapping",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/netfilter/iptcrdr.c",
+            "line": 1820
+          }
+        ]
+      }
+    },
+    {
+      "id": 32,
+      "type": "memory-leak",
+      "category": "static",
+      "severity": "warning",
+      "message": "memory allocated with malloc() at line 1900 ('new_e') is not released before this return",
+      "cwe": 401,
+      "vulnerability": "Missing Release of Memory after Effective Lifetime",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/netfilter/iptcrdr.c",
+        "line": 1921,
+        "column": 3,
+        "function": "update_portmapping"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "update_portmapping",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/netfilter/iptcrdr.c",
+            "line": 1921,
+            "column": 3
+          }
+        ],
+        "alloc": [
+          {
+            "function": "update_portmapping",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/netfilter/iptcrdr.c",
+            "line": 1900
+          }
+        ]
+      }
+    },
+    {
+      "id": 33,
+      "type": "memory-leak",
+      "category": "static",
+      "severity": "warning",
+      "message": "memory allocated with malloc() at line 2000 ('new_e') is not released before this return",
+      "cwe": 401,
+      "vulnerability": "Missing Release of Memory after Effective Lifetime",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/netfilter/iptcrdr.c",
+        "line": 2041,
+        "column": 2,
+        "function": "update_portmapping"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "update_portmapping",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/netfilter/iptcrdr.c",
+            "line": 2041,
+            "column": 2
+          }
+        ],
+        "alloc": [
+          {
+            "function": "update_portmapping",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/netfilter/iptcrdr.c",
+            "line": 2000
+          }
+        ]
+      }
+    },
+    {
+      "id": 34,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'last' is dereferenced at line 224 via -> after being set to NULL at line 216: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/netfilter/iptcrdr.c",
+        "line": 224,
+        "column": 5,
+        "function": "del_redirect_desc"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "del_redirect_desc",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/netfilter/iptcrdr.c",
+            "line": 224,
+            "column": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": 35,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'number' is dereferenced at line 1664 after being set to NULL at line 1612: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/netfilter/iptcrdr.c",
+        "line": 1664,
+        "column": 9,
+        "function": "get_portmappings_in_range"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "get_portmappings_in_range",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/netfilter/iptcrdr.c",
+            "line": 1664,
+            "column": 9
+          }
+        ]
+      }
+    },
+    {
+      "id": 36,
+      "type": "heap-use-after-free",
+      "category": "static",
+      "severity": "warning",
+      "message": "'array' is used after it was released at line 684",
+      "cwe": 416,
+      "vulnerability": "Use After Free",
+      "vuln_severity": "critical",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/netfilter_nft/nftnlrdr.c",
+        "line": 676,
+        "column": 19,
+        "function": "get_portmappings_in_range"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "get_portmappings_in_range",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/netfilter_nft/nftnlrdr.c",
+            "line": 676,
+            "column": 19
+          }
+        ],
+        "alloc": [
+          {
+            "function": "get_portmappings_in_range",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/netfilter_nft/nftnlrdr.c",
+            "line": 660
+          }
+        ],
+        "free": [
+          {
+            "function": "get_portmappings_in_range",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/netfilter_nft/nftnlrdr.c",
+            "line": 684
+          }
+        ]
+      }
+    },
+    {
+      "id": 37,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'number' is dereferenced at line 674 after being set to NULL at line 658: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/netfilter_nft/nftnlrdr.c",
+        "line": 674,
+        "column": 8,
+        "function": "get_portmappings_in_range"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "get_portmappings_in_range",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/netfilter_nft/nftnlrdr.c",
+            "line": 674,
+            "column": 8
+          }
+        ]
+      }
+    },
+    {
+      "id": 38,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'r' is dereferenced at line 622 via -> after being set to NULL at line 619: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/netfilter_nft/nftnlrdr_misc.c",
+        "line": 622,
+        "column": 50,
+        "function": "table_cb"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "table_cb",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/netfilter_nft/nftnlrdr_misc.c",
+            "line": 622,
+            "column": 50
+          }
+        ]
+      }
+    },
+    {
+      "id": 39,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'response' is indexed at line 1490 after being set to NULL at line 1486: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/pcpserver.c",
+        "line": 1490,
+        "column": 3,
+        "function": "createPCPResponse"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "createPCPResponse",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/pcpserver.c",
+            "line": 1490,
+            "column": 3
+          }
+        ]
+      }
+    },
+    {
+      "id": 40,
+      "type": "resource-leak",
+      "category": "static",
+      "severity": "warning",
+      "message": "FILE stream from fopen() at line 58 ('f') is not closed before this return",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/testminissdp.c",
+        "line": 67,
+        "column": 3,
+        "function": "main"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "main",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/testminissdp.c",
+            "line": 67,
+            "column": 3
+          }
+        ],
+        "alloc": [
+          {
+            "function": "main",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/testminissdp.c",
+            "line": 58
+          }
+        ]
+      }
+    },
+    {
+      "id": 41,
+      "type": "insecure-permissions",
+      "category": "static",
+      "severity": "warning",
+      "message": "mkdir() creates the directory writable by every user: another user can change what the program reads later; give the owner (and a group) the write bit only",
+      "cwe": 732,
+      "vulnerability": "Incorrect Permission Assignment for Critical Resource",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/testupnpdescgen.c",
+        "line": 171,
+        "column": 5,
+        "function": "main"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "main",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/testupnpdescgen.c",
+            "line": 171,
+            "column": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": 42,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'len' is dereferenced at line 1346 after being set to NULL at line 1254: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnpdescgen.c",
+        "line": 1346,
+        "column": 6,
+        "function": "genEventVars"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "genEventVars",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnpdescgen.c",
+            "line": 1346,
+            "column": 6
+          }
+        ]
+      }
+    },
+    {
+      "id": 43,
+      "type": "heap-use-after-free",
+      "category": "static",
+      "severity": "warning",
+      "message": "'h->socket' is used after it was released at line 190",
+      "cwe": 416,
+      "vulnerability": "Use After Free",
+      "vuln_severity": "critical",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnphttp.c",
+        "line": 192,
+        "column": 58,
+        "function": "CloseSocket_upnphttp"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "CloseSocket_upnphttp",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnphttp.c",
+            "line": 192,
+            "column": 58
+          }
+        ],
+        "free": [
+          {
+            "function": "CloseSocket_upnphttp",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnphttp.c",
+            "line": 190
+          }
+        ]
+      }
+    },
+    {
+      "id": 44,
+      "type": "tls-no-verify",
+      "category": "static",
+      "severity": "warning",
+      "message": "SSL_CTX_set_verify() is called with SSL_VERIFY_NONE: the peer's certificate is not checked, so anyone who intercepts the connection impersonates the server; use SSL_VERIFY_PEER with a certificate the program trusts",
+      "cwe": 295,
+      "vulnerability": "Improper Certificate Validation",
+      "vuln_severity": "high",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnphttp.c",
+        "line": 110,
+        "column": 2,
+        "function": "init_ssl"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "init_ssl",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnphttp.c",
+            "line": 110,
+            "column": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": 45,
+      "type": "memory-leak",
+      "category": "static",
+      "severity": "warning",
+      "message": "memory allocated with malloc() at line 239 is leaked when 't' is overwritten",
+      "cwe": 401,
+      "vulnerability": "Missing Release of Memory after Effective Lifetime",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnppermissions.c",
+        "line": 267,
+        "column": 8,
+        "function": "get_next_token"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "get_next_token",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnppermissions.c",
+            "line": 267,
+            "column": 8
+          }
+        ],
+        "alloc": [
+          {
+            "function": "get_next_token",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnppermissions.c",
+            "line": 239
+          }
+        ]
+      }
+    },
+    {
+      "id": 46,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'token' is dereferenced at line 265 after being set to NULL at line 230: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnppermissions.c",
+        "line": 265,
+        "column": 19,
+        "function": "get_next_token"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "get_next_token",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnppermissions.c",
+            "line": 265,
+            "column": 19
+          }
+        ]
+      }
+    },
+    {
+      "id": 47,
+      "type": "unchecked-stream",
+      "category": "static",
+      "severity": "warning",
+      "message": "'fdt' from fdopen() at line 190 may be NULL here: fprintf() uses it before any test, which crashes when the open fails",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnppinhole.c",
+        "line": 256,
+        "column": 3,
+        "function": "lease_file6_update"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "lease_file6_update",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnppinhole.c",
+            "line": 256,
+            "column": 3
+          }
+        ],
+        "alloc": [
+          {
+            "function": "lease_file6_update",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnppinhole.c",
+            "line": 190
+          }
+        ]
+      }
+    },
+    {
+      "id": 48,
+      "type": "unchecked-stream",
+      "category": "static",
+      "severity": "warning",
+      "message": "'fdt' from fdopen() at line 190 may be NULL here: fclose() uses it before any test, which crashes when the open fails",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnppinhole.c",
+        "line": 261,
+        "column": 2,
+        "function": "lease_file6_update"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "lease_file6_update",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnppinhole.c",
+            "line": 261,
+            "column": 2
+          }
+        ],
+        "alloc": [
+          {
+            "function": "lease_file6_update",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnppinhole.c",
+            "line": 190
+          }
+        ]
+      }
+    },
+    {
+      "id": 49,
+      "type": "unchecked-stream",
+      "category": "static",
+      "severity": "warning",
+      "message": "'fdt' from fdopen() at line 308 may be NULL here: fwrite() uses it before any test, which crashes when the open fails",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnppinhole.c",
+        "line": 335,
+        "column": 5,
+        "function": "lease_file6_remove"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "lease_file6_remove",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnppinhole.c",
+            "line": 335,
+            "column": 5
+          }
+        ],
+        "alloc": [
+          {
+            "function": "lease_file6_remove",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnppinhole.c",
+            "line": 308
+          }
+        ]
+      }
+    },
+    {
+      "id": 50,
+      "type": "unchecked-stream",
+      "category": "static",
+      "severity": "warning",
+      "message": "'fdt' from fdopen() at line 308 may be NULL here: fwrite() uses it before any test, which crashes when the open fails",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnppinhole.c",
+        "line": 339,
+        "column": 4,
+        "function": "lease_file6_remove"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "lease_file6_remove",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnppinhole.c",
+            "line": 339,
+            "column": 4
+          }
+        ],
+        "alloc": [
+          {
+            "function": "lease_file6_remove",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnppinhole.c",
+            "line": 308
+          }
+        ]
+      }
+    },
+    {
+      "id": 51,
+      "type": "unchecked-stream",
+      "category": "static",
+      "severity": "warning",
+      "message": "'fdt' from fdopen() at line 308 may be NULL here: fclose() uses it before any test, which crashes when the open fails",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnppinhole.c",
+        "line": 343,
+        "column": 2,
+        "function": "lease_file6_remove"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "lease_file6_remove",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnppinhole.c",
+            "line": 343,
+            "column": 2
+          }
+        ],
+        "alloc": [
+          {
+            "function": "lease_file6_remove",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnppinhole.c",
+            "line": 308
+          }
+        ]
+      }
+    },
+    {
+      "id": 52,
+      "type": "unchecked-stream",
+      "category": "static",
+      "severity": "warning",
+      "message": "'fdt' from fdopen() at line 391 may be NULL here: fwrite() uses it before any test, which crashes when the open fails",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnppinhole.c",
+        "line": 456,
+        "column": 3,
+        "function": "lease_file6_expire"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "lease_file6_expire",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnppinhole.c",
+            "line": 456,
+            "column": 3
+          }
+        ],
+        "alloc": [
+          {
+            "function": "lease_file6_expire",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnppinhole.c",
+            "line": 391
+          }
+        ]
+      }
+    },
+    {
+      "id": 53,
+      "type": "unchecked-stream",
+      "category": "static",
+      "severity": "warning",
+      "message": "'fdt' from fdopen() at line 391 may be NULL here: fclose() uses it before any test, which crashes when the open fails",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnppinhole.c",
+        "line": 459,
+        "column": 2,
+        "function": "lease_file6_expire"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "lease_file6_expire",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnppinhole.c",
+            "line": 459,
+            "column": 2
+          }
+        ],
+        "alloc": [
+          {
+            "function": "lease_file6_expire",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnppinhole.c",
+            "line": 391
+          }
+        ]
+      }
+    },
+    {
+      "id": 54,
+      "type": "integer-overflow",
+      "category": "static",
+      "severity": "warning",
+      "message": "calculation of 'r' involves multiplication with untrusted input 'upnp_update_inboundpinhole(*uid,lease...': integer multiplication can wrap around without check; validate bounds before multiplying",
+      "cwe": 190,
+      "vulnerability": "Integer Overflow or Wraparound",
+      "vuln_severity": "high",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnppinhole.c",
+        "line": 656,
+        "column": 34,
+        "function": "upnp_add_inboundpinhole"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "upnp_add_inboundpinhole",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnppinhole.c",
+            "line": 656,
+            "column": 34
+          }
+        ]
+      }
+    },
+    {
+      "id": 55,
+      "type": "unchecked-stream",
+      "category": "static",
+      "severity": "warning",
+      "message": "'fdt' from fdopen() at line 153 may be NULL here: fwrite() uses it before any test, which crashes when the open fails",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnpredirect.c",
+        "line": 160,
+        "column": 4,
+        "function": "lease_file_remove"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "lease_file_remove",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnpredirect.c",
+            "line": 160,
+            "column": 4
+          }
+        ],
+        "alloc": [
+          {
+            "function": "lease_file_remove",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnpredirect.c",
+            "line": 153
+          }
+        ]
+      }
+    },
+    {
+      "id": 56,
+      "type": "unchecked-stream",
+      "category": "static",
+      "severity": "warning",
+      "message": "'fdt' from fdopen() at line 153 may be NULL here: fclose() uses it before any test, which crashes when the open fails",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnpredirect.c",
+        "line": 163,
+        "column": 2,
+        "function": "lease_file_remove"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "lease_file_remove",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnpredirect.c",
+            "line": 163,
+            "column": 2
+          }
+        ],
+        "alloc": [
+          {
+            "function": "lease_file_remove",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnpredirect.c",
+            "line": 153
+          }
+        ]
+      }
+    },
+    {
+      "id": 57,
+      "type": "memory-leak",
+      "category": "static",
+      "severity": "warning",
+      "message": "if realloc() fails, the original block is leaked because 'body' is overwritten with NULL; assign to a temporary first",
+      "cwe": 401,
+      "vulnerability": "Missing Release of Memory after Effective Lifetime",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnpsoap.c",
+        "line": 1356,
+        "column": 9,
+        "function": "GetListOfPortMappings"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "GetListOfPortMappings",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnpsoap.c",
+            "line": 1356,
+            "column": 9
+          }
+        ]
+      }
+    },
+    {
+      "id": 58,
+      "type": "memory-leak",
+      "category": "static",
+      "severity": "warning",
+      "message": "if realloc() fails, the original block is leaked because 'body' is overwritten with NULL; assign to a temporary first",
+      "cwe": 401,
+      "vulnerability": "Missing Release of Memory after Effective Lifetime",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnpsoap.c",
+        "line": 1397,
+        "column": 8,
+        "function": "GetListOfPortMappings"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "GetListOfPortMappings",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnpsoap.c",
+            "line": 1397,
+            "column": 8
+          }
+        ]
+      }
+    },
+    {
+      "id": 59,
+      "type": "memory-leak",
+      "category": "static",
+      "severity": "warning",
+      "message": "address list from getaddrinfo() at line 1772 ('ai') is not freed with freeaddrinfo() before this return",
+      "cwe": 401,
+      "vulnerability": "Missing Release of Memory after Effective Lifetime",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnpsoap.c",
+        "line": 1792,
+        "column": 8,
+        "function": "PinholeVerification"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "PinholeVerification",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnpsoap.c",
+            "line": 1792,
+            "column": 8
+          }
+        ],
+        "alloc": [
+          {
+            "function": "PinholeVerification",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnpsoap.c",
+            "line": 1772
+          }
+        ]
+      }
+    },
+    {
+      "id": 60,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'restrictive_nat' is dereferenced at line 605 after being set to NULL at line 598: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnpstun.c",
+        "line": 605,
+        "column": 3,
+        "function": "perform_stun"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "perform_stun",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/upnpstun.c",
+            "line": 605,
+            "column": 3
+          }
+        ]
+      }
+    },
+    {
+      "id": 61,
+      "type": "path-traversal",
+      "category": "static",
+      "severity": "warning",
+      "message": "text from outside is passed to getifstats(), which reaches fopen() in getifstats() (getifstats.c:146): what that call does with this text is chosen by whoever controls it",
+      "cwe": 22,
+      "vulnerability": "Improper Limitation of a Pathname to a Restricted Directory",
+      "vuln_severity": "high",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/testgetifstats.c",
+        "line": 31,
+        "column": 6,
+        "function": "main"
+      },
+      "occurrences": 1,
+      "flow": [
+        {
+          "function": "main",
+          "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/testgetifstats.c",
+          "line": 31,
+          "column": 17,
+          "what": "argv"
+        },
+        {
+          "function": "main",
+          "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/testgetifstats.c",
+          "line": 31,
+          "column": 6,
+          "what": "getifstats()"
+        },
+        {
+          "function": "getifstats",
+          "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/linux/getifstats.c",
+          "line": 146,
+          "what": "fopen()"
+        }
+      ],
+      "stacks": {
+        "access": [
+          {
+            "function": "main",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/miniupnp/miniupnpd/testgetifstats.c",
+            "line": 31,
+            "column": 6
+          }
+        ]
+      }
+    }
+  ],
+  "notes": []
+}

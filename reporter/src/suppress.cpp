@@ -1,6 +1,7 @@
 #include "internal.h"
 #include "protocol.h"
 
+#include <chrono>
 #include <fstream>
 #ifndef _WIN32
 #include <fnmatch.h>
@@ -61,11 +62,6 @@ bool glob_match(const char *p, const char *t) {
 
 namespace {
 
-struct SuppressRule {
-    std::string type; // finding type, "leak", or "*"
-    std::string pattern;
-};
-
 std::string trim(const std::string &s) {
     size_t b = s.find_first_not_of(" \t\r");
     size_t e = s.find_last_not_of(" \t\r");
@@ -99,7 +95,7 @@ bool frame_matches(const std::string &pattern, const Frame &fr) {
 // with one frame: the interpreter's own leak, not a ctypes frame under it.
 constexpr size_t kNear = 3;
 
-bool matches(const SuppressRule &r, const Finding &f) {
+bool matches(const SuppressionRule &r, const Finding &f) {
     if (!type_matches(r.type, f))
         return false;
     size_t skip = 0, limit = size_t(-1);
@@ -251,14 +247,94 @@ void apply_default_suppressions(Report &r) {
                           "with it");
 }
 
-bool apply_suppressions(const std::string &path, Report &r,
-                        std::string *error) {
+namespace {
+
+// A date as days since the Unix epoch. False when it is not YYYY-MM-DD or not
+// a day that exists (2026-02-30).
+bool date_days(const std::string &text, int *days) {
+    if (text.size() != 10 || text[4] != '-' || text[7] != '-')
+        return false;
+    for (size_t i : {0u, 1u, 2u, 3u, 5u, 6u, 8u, 9u})
+        if (text[i] < '0' || text[i] > '9')
+            return false;
+    const int y = std::stoi(text.substr(0, 4));
+    const unsigned m = unsigned(std::stoi(text.substr(5, 2)));
+    const unsigned d = unsigned(std::stoi(text.substr(8, 2)));
+    const std::chrono::year_month_day ymd{std::chrono::year{y}, std::chrono::month{m},
+                                          std::chrono::day{d}};
+    if (!ymd.ok())
+        return false;
+    *days = int(std::chrono::sys_days(ymd).time_since_epoch().count());
+    return true;
+}
+
+int today_days() {
+    const auto now = std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now());
+    return int(now.time_since_epoch().count());
+}
+
+// type:pattern, then optional ` reason="..."` and ` expires=YYYY-MM-DD`.
+bool parse_rule(const std::string &text, int line, SuppressionRule *rule,
+                std::string *why) {
+    std::string rest = trim(text);
+    rule->line = line;
+    const size_t rpos = rest.find(" reason=\"");
+    if (rpos != std::string::npos) {
+        const size_t open = rpos + 9;
+        const size_t close = rest.find('"', open);
+        if (close == std::string::npos) {
+            *why = "reason=\" is not closed";
+            return false;
+        }
+        rule->reason = rest.substr(open, close - open);
+        rest.erase(rpos, close - rpos + 1);
+    }
+    const size_t epos = rest.find(" expires=");
+    if (epos != std::string::npos) {
+        const size_t start = epos + 9;
+        size_t end = rest.find_first_of(" \t", start);
+        if (end == std::string::npos)
+            end = rest.size();
+        const std::string date = rest.substr(start, end - start);
+        int ignored = 0;
+        if (!date_days(date, &ignored)) {
+            *why = "expires= must be a real date written as YYYY-MM-DD, not '" + date + "'";
+            return false;
+        }
+        rule->expires = date;
+        rest.erase(epos, end - epos);
+    }
+    rest = trim(rest);
+    const size_t colon = rest.find(':');
+    if (colon == std::string::npos || colon == 0 || colon + 1 == rest.size() ||
+        trim(rest.substr(colon + 1)).empty()) {
+        *why = "expected <type>:<pattern> [reason=\"...\"] [expires=YYYY-MM-DD]";
+        return false;
+    }
+    rule->type = trim(rest.substr(0, colon));
+    rule->pattern = trim(rest.substr(colon + 1));
+    return true;
+}
+
+bool is_expired(const SuppressionRule &rule, int today, std::string *why) {
+    if (rule.expires.empty())
+        return false;
+    int day = 0;
+    if (!date_days(rule.expires, &day) || day >= today)
+        return false;
+    *why = "suppression rule expired on " + rule.expires;
+    return true;
+}
+
+} // namespace
+
+bool load_suppressions(const std::string &path, std::vector<SuppressionRule> *out,
+                       std::string *error) {
     std::ifstream in(path);
     if (!in) {
         *error = "cannot read suppression file '" + path + "'";
         return false;
     }
-    std::vector<SuppressRule> list;
     std::string line;
     int no = 0;
     while (std::getline(in, line)) {
@@ -266,19 +342,83 @@ bool apply_suppressions(const std::string &path, Report &r,
         line = trim(line);
         if (line.empty() || line[0] == '#')
             continue;
-        size_t colon = line.find(':');
-        if (colon == std::string::npos || colon == 0 ||
-            colon + 1 == line.size()) {
-            *error =
-                path + ":" + std::to_string(no) + ": expected <type>:<pattern>";
+        SuppressionRule rule;
+        std::string why;
+        if (!parse_rule(line, no, &rule, &why)) {
+            *error = path + ":" + std::to_string(no) + ": " + why;
             return false;
         }
-        list.push_back(
-            {trim(line.substr(0, colon)), trim(line.substr(colon + 1))});
+        out->push_back(std::move(rule));
+    }
+    return true;
+}
+
+bool audit_suppressions(const std::string &path, std::ostream &os, std::string *error) {
+    std::vector<SuppressionRule> list;
+    if (!load_suppressions(path, &list, error))
+        return false;
+    const int today = today_days();
+    os << path << ": " << list.size() << " rule(s)\n";
+    bool bad = false;
+    for (const SuppressionRule &r : list) {
+        os << "  " << r.type << ':' << r.pattern;
+        os << "  reason: " << (r.reason.empty() ? std::string("(none)") : "\"" + r.reason + "\"");
+        if (!r.expires.empty()) {
+            int day = 0;
+            date_days(r.expires, &day);
+            const int left = day - today;
+            os << "  expires " << r.expires << " ("
+               << (left < 0 ? std::to_string(-left) + " day(s) ago; EXPIRED"
+                            : std::to_string(left) + " day(s) left")
+               << ')';
+        } else {
+            os << "  expires: never";
+        }
+        os << '\n';
+        std::string why;
+        if (is_expired(r, today, &why)) {
+            if (!bad)
+                *error = path + ":" + std::to_string(r.line) + ": " + why +
+                         " (remove it, or write a new date after reviewing the finding)";
+            bad = true;
+        }
+    }
+    return !bad;
+}
+
+bool check_suppressions(const std::string &path, std::string *error) {
+    std::vector<SuppressionRule> list;
+    if (!load_suppressions(path, &list, error))
+        return false;
+    const int today = today_days();
+    for (const SuppressionRule &rule : list) {
+        std::string why;
+        if (is_expired(rule, today, &why)) {
+            *error = path + ":" + std::to_string(rule.line) + ": " + why +
+                     " (remove it, or write a new date after reviewing the finding)";
+            return false;
+        }
+    }
+    return true;
+}
+
+bool apply_suppressions(const std::string &path, Report &r,
+                        std::string *error) {
+    std::vector<SuppressionRule> list;
+    if (!load_suppressions(path, &list, error))
+        return false;
+    const int today = today_days();
+    for (const SuppressionRule &rule : list) {
+        std::string why;
+        if (is_expired(rule, today, &why)) {
+            *error = path + ":" + std::to_string(rule.line) + ": " + why +
+                     " (remove it, or write a new date after reviewing the finding)";
+            return false;
+        }
     }
     size_t before = r.findings.size();
     std::erase_if(r.findings, [&](const Finding &f) {
-        for (const SuppressRule &s : list)
+        for (const SuppressionRule &s : list)
             if (matches(s, f))
                 return true;
         return false;

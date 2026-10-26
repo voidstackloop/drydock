@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <functional>
@@ -951,6 +952,11 @@ class ConstExpr {
             return 0;
         }
         const Token &x = t_[i_];
+        if ((x.is("-") || x.is("+")) && i_ + 1 < e_) {
+            ++i_;
+            const long v = atom(ok);
+            return x.is("-") ? -v : v;
+        }
         if (x.kind == Tok::Number) {
             ++i_;
             if (x.text.find_first_of(".eE") != std::string::npos && !starts(x.text, "0x")) {
@@ -1091,6 +1097,7 @@ const std::set<std::string> kReaders = {"strlen", "strcmp", "strncmp", "memcmp",
                                         "system", "popen", "chmod", "free"};
 
 struct Context {
+    std::set<std::string> stack_arrays;           // stack-allocated char buf[N]
     std::map<std::string, long> arrays;           // local char arrays: size or kUnknownSize
     std::map<std::string, std::string> alias;     // "p = buf": p stands for buf
     std::set<std::string> constant;               // hold only string literals
@@ -1112,6 +1119,7 @@ struct Context {
     std::set<std::string> ssrf_seen;
     std::set<std::string> xss_seen;
     std::set<std::string> off_by_one_seen;
+    std::set<std::string> oob_seen;
     std::set<std::string> int_overflow_seen;
     std::map<std::string, size_t> null_ptrs; // pointer name -> assignment token index
     std::set<std::string> null_reported;
@@ -1592,6 +1600,8 @@ class Checker {
     // Which names stand for a local array, and which hold only literals.
     void prepare(Range body, const std::set<std::string> &file_literals, Context *c) {
         c->arrays = local_arrays(t_, body, &c->size_text);
+        for (const auto &[name, sz] : c->arrays)
+            c->stack_arrays.insert(name);
         // p = alloca(50);  p = malloc(50);  are buffers of that size too
         for (size_t i = body.b; i < body.e; ++i) {
             if (!t_[i].is("=") || member(t_, i))
@@ -1813,6 +1823,32 @@ class Checker {
                                   "from the environment",
                                   f.name, i);
                     }
+                    // High-entropy secret token / key detector (Shannon entropy)
+                    if (lit.size() >= 20 && lit.find(' ') == std::string::npos &&
+                        lit.find('/') == std::string::npos && lit.find('\\') == std::string::npos &&
+                        lit.find('%') == std::string::npos && lit.find("http") == std::string::npos &&
+                        lit.rfind("sk-", 0) != 0 && lit.rfind("glpat-", 0) != 0 &&
+                        lit.rfind("npm_", 0) != 0 && lit.rfind("ghp_", 0) != 0) {
+                        int counts[256] = {0};
+                        for (unsigned char c_ch : lit)
+                            counts[c_ch]++;
+                        double ent = 0.0;
+                        double len = static_cast<double>(lit.size());
+                        for (int ci = 0; ci < 256; ++ci) {
+                            if (counts[ci] > 0) {
+                                double p = counts[ci] / len;
+                                ent -= p * (std::log(p) / std::log(2.0));
+                            }
+                        }
+                        if (ent >= 4.3 && hosts.insert("ent|" + lit).second) {
+                            char buf[32];
+                            std::snprintf(buf, sizeof buf, "%.2f", ent);
+                            issue("high-entropy-secret",
+                                  "high-entropy string literal detected (Shannon entropy " + std::string(buf) +
+                                  " bits/char): likely a hardcoded secret token, cryptographic key, or API credential",
+                                  f.name, i);
+                        }
+                    }
                     // The same command rows the file scanner matches in a binary.
                     if (lit.find_first_of(" /|;") != std::string::npos) {
                         char norm[1024];
@@ -1961,13 +1997,29 @@ class Checker {
             if (t_[i].kind == Tok::Ident && i + 1 < body.e && t_[i + 1].is("[")) {
                 bool is_array_decl = false;
                 size_t stmt_start = i;
-                while (stmt_start > body.b && !t_[stmt_start - 1].is(";") &&
-                       !t_[stmt_start - 1].is("{") && !t_[stmt_start - 1].is("}"))
-                    --stmt_start;
+                for (;;) {
+                    if (stmt_start <= body.b || t_[stmt_start - 1].is(";") || t_[stmt_start - 1].is("{"))
+                        break;
+                    if (!t_[stmt_start - 1].is("}")) { --stmt_start; continue; }
+                    size_t k = stmt_start - 1;
+                    int depth = 0;
+                    while (k > body.b && depth >= 0) {
+                        if (t_[k].is("}")) ++depth;
+                        else if (t_[k].is("{")) --depth;
+                        if (depth == 0) break;
+                        --k;
+                    }
+                    if (depth != 0 || k == body.b || !t_[k - 1].is("=")) break;
+                    stmt_start = k - 1;
+                }
                 bool has_eq = false;
-                for (size_t s = stmt_start; s < i; ++s)
-                    if (t_[s].is("="))
+                bool seen_close = false;
+                for (size_t s = stmt_start; s < i; ++s) {
+                    if (t_[s].is("]"))
+                        seen_close = true;
+                    if (t_[s].is("=") && !seen_close)
                         has_eq = true;
+                }
                 if (!has_eq) {
                     for (size_t s = stmt_start; s < i; ++s) {
                         if (element_size(t_[s].text) > 0 || t_[s].is("struct") || t_[s].is("const") ||
@@ -2006,6 +2058,13 @@ class Checker {
                                               "(valid indices are 0 to " + std::to_string(cap - 1) + ")",
                                           f.name, i);
                                 }
+                            } else if (ConstExpr(t_, idx, c.arrays, c.alias, c.fill).value(&val) && (val > cap || val < 0)) {
+                                const bool is_write = close + 1 < body.e && (t_[close + 1].is("=") || t_[close + 1].is("+=") || t_[close + 1].is("-=") || t_[close + 1].is("*=") || t_[close + 1].is("/=") || t_[close + 1].is("%="));
+                                if (c.oob_seen.insert(arr + "_" + std::to_string(t_[i].line)).second) {
+                                    issue(is_write ? "out-of-bounds-write" : "out-of-bounds-read",
+                                          t_[i].text + " has size " + std::to_string(cap) + " bytes but index " + std::to_string(val) + (val < 0 ? " is before its start" : " is past its end"),
+                                          f.name, i);
+                                }
                             } else if (ConstExpr(t_, idx, c.arrays, c.alias, c.fill).value(&val) && val == cap) {
                                 if (c.off_by_one_seen.insert(arr + "_" + std::to_string(t_[i].line)).second) {
                                     issue("off-by-one",
@@ -2017,6 +2076,48 @@ class Checker {
                                 }
                             }
                         }
+                    }
+                }
+            }
+
+            // -- return-stack-address (CWE-562)
+            if (t_[i].is("return") && i + 1 < body.e) {
+                size_t k = i + 1;
+                if (k < body.e && t_[k].is("&") && k + 1 < body.e && t_[k + 1].kind == Tok::Ident) {
+                    const std::string var = t_[k + 1].text;
+                    if (c.stack_arrays.count(var) || c.null_ptrs.count(var)) {
+                        issue("return-stack-address",
+                              "returning address of local variable or stack array '" + var + "': "
+                              "the stack frame is destroyed upon function return, resulting in a dangling pointer; "
+                              "allocate dynamic memory or return by value",
+                              f.name, i);
+                    }
+                } else if (k < body.e && t_[k].kind == Tok::Ident && c.stack_arrays.count(t_[k].text)) {
+                    issue("return-stack-address",
+                          "returning address of stack-allocated array '" + t_[k].text + "': "
+                          "the stack frame is destroyed upon function return, resulting in a dangling pointer; "
+                          "allocate dynamic memory or return by value",
+                          f.name, i);
+                }
+            }
+
+            // -- uninitialized-variable (CWE-457)
+            if (i + 2 < body.e && (t_[i].is("int") || t_[i].is("char") || t_[i].is("long") ||
+                                   t_[i].is("short") || t_[i].is("float") || t_[i].is("double") ||
+                                   t_[i].is("size_t") || t_[i].is("uint32_t")) &&
+                t_[i + 1].kind == Tok::Ident && t_[i + 2].is(";")) {
+                const std::string var = t_[i + 1].text;
+                for (size_t next = i + 3; next < body.e; ++next) {
+                    if (t_[next].is_text(var.c_str())) {
+                        if (next + 1 < body.e && t_[next + 1].is("="))
+                            break; // assigned first
+                        if (next > 0 && t_[next - 1].is("&"))
+                            break; // passed by address
+                        issue("uninitialized-variable",
+                              "local variable '" + var + "' is used uninitialized: "
+                              "reading uninitialized variables yields indeterminate values or info leaks; initialize at declaration",
+                              f.name, next);
+                        break;
                     }
                 }
             }
@@ -3662,6 +3763,142 @@ class Checker {
                 }
             }
         }
+
+        // -- Insecure temporary file creation (CWE-377)
+        if ((word_is(name, "open") || word_is(name, "fopen") || word_is(name, "creat")) && !a.empty()) {
+            std::string path_lit;
+            if (literal(t_, a[0], &path_lit)) {
+                if ((path_lit.rfind("/tmp/", 0) == 0 || path_lit.rfind("/var/tmp/", 0) == 0) &&
+                    (path_lit.find("%") != std::string::npos || path_lit.find("temp") != std::string::npos)) {
+                    issue("insecure-tempfile",
+                          name + "() creates a temporary file at predictable path '" + path_lit +
+                          "' without atomic exclusivity: vulnerable to symlink race attacks; use mkstemp()",
+                          f.name, i);
+                }
+            }
+        }
+
+        // -- Hardcoded cryptographic key or IV (CWE-321 / CWE-329)
+        if ((word_is(name, "AES_set_encrypt_key") || word_is(name, "AES_set_decrypt_key") ||
+             word_is(name, "DES_set_key") || word_is(name, "DES_set_key_checked") ||
+             word_is(name, "RC4_set_key")) && !a.empty()) {
+            std::string lit;
+            if (literal(t_, a[0], &lit) || (a.size() > 1 && literal(t_, a[1], &lit))) {
+                issue("hardcoded-key-iv",
+                      name + "() uses a hard-coded cryptographic key: embedded keys in binaries can be "
+                      "recovered by attackers; generate random keys or load from a secure vault",
+                      f.name, i);
+            }
+        }
+        if ((word_is(name, "EVP_CipherInit") || word_is(name, "EVP_CipherInit_ex") ||
+             word_is(name, "EVP_EncryptInit") || word_is(name, "EVP_EncryptInit_ex") ||
+             word_is(name, "EVP_DecryptInit") || word_is(name, "EVP_DecryptInit_ex")) && a.size() >= 5) {
+            std::string key_lit, iv_lit;
+            const bool has_key = literal(t_, a[3], &key_lit);
+            const bool has_iv = literal(t_, a[4], &iv_lit);
+            if (has_key || has_iv) {
+                issue("hardcoded-key-iv",
+                      name + "() is passed a hard-coded key or initialization vector: hard-coded cryptographic material "
+                      "compromises encryption confidentiality; generate keys and IVs using a CSPRNG",
+                      f.name, i);
+            }
+        }
+
+        // -- Unchecked security return value (CWE-252)
+        if (word_is(name, "cap_set_proc")) {
+            bool checked = false;
+            if (i > 0) {
+                size_t prev = i - 1;
+                if (t_[prev].is("=") || t_[prev].is("if") || t_[prev].is("while") ||
+                    t_[prev].is("return") || t_[prev].is("assert") || t_[prev].is("(") ||
+                    t_[prev].is("!") || t_[prev].is("==") || t_[prev].is("!=")) {
+                    checked = true;
+                }
+            }
+            if (!checked) {
+                issue("unchecked-security-return",
+                      "the return value of privilege dropping function " + name + "() is ignored: if dropping "
+                      "privileges fails, the program continues executing with elevated privileges; check the return value",
+                      f.name, i);
+            }
+        }
+
+        // -- Uncleared sensitive data before free/exit (CWE-14)
+        if (word_is(name, "memset") && a.size() >= 3) {
+            std::string arg0 = lower(show(t_, a[0]));
+            std::string arg1 = show(t_, a[1]);
+            if ((arg1 == "0" || arg1 == "0x0" || arg1 == "0x00") &&
+                (arg0.find("pass") != std::string::npos || arg0.find("key") != std::string::npos ||
+                 arg0.find("secret") != std::string::npos || arg0.find("token") != std::string::npos ||
+                 arg0.find("cred") != std::string::npos)) {
+                issue("uncleared-sensitive-data",
+                      "memset() used to clear sensitive credential buffer '" + show(t_, a[0]) +
+                      "': optimizing compilers may dead-code eliminate this memset; "
+                      "use explicit_bzero(), memset_s(), or SecureZeroMemory()",
+                      f.name, i);
+            }
+        }
+
+        // -- Observable timing discrepancy in cryptographic comparison (CWE-208 / CWE-385)
+        if ((word_is(name, "memcmp") || word_is(name, "strcmp") || word_is(name, "strncmp")) && a.size() >= 2) {
+            std::string a0 = lower(show(t_, a[0]));
+            std::string a1 = lower(show(t_, a[1]));
+            auto is_crypto_word = [](const std::string &s) {
+                return s.find("hmac") != std::string::npos || s.find("hash") != std::string::npos ||
+                       s.find("signature") != std::string::npos || s.find("digest") != std::string::npos ||
+                       (s.find("mac") != std::string::npos && s.find("machine") == std::string::npos && s.find("macro") == std::string::npos) ||
+                       s.find("auth_token") != std::string::npos || s.find("access_token") != std::string::npos ||
+                       s.find("bearer") != std::string::npos || s.find("secret_token") != std::string::npos;
+            };
+            if (is_crypto_word(a0) || is_crypto_word(a1)) {
+                issue("timing-attack",
+                      name + "() compares cryptographic digest, hash, signature or token with variable execution time: "
+                      "vulnerable to timing side-channel attacks; use constant-time CRYPTO_memcmp() or timingsafe_bcmp()",
+                      f.name, i);
+            }
+        }
+
+        // -- Zip slip path traversal via archive extraction (CWE-29 / CWE-22)
+        if ((word_is(name, "fopen") || word_is(name, "open") || word_is(name, "creat")) && !a.empty()) {
+            std::string path_expr = show(t_, a[0]);
+            if (path_expr.find("->filename") != std::string::npos || path_expr.find("->name") != std::string::npos ||
+                path_expr.find("header.name") != std::string::npos || path_expr.find("entry.name") != std::string::npos ||
+                path_expr.find("entry.filename") != std::string::npos) {
+                issue("zip-slip",
+                      name + "() opens destination path derived directly from archive entry name ('" + path_expr +
+                      "') without canonical prefix check: malicious archives with '../' can overwrite arbitrary files (Zip Slip); "
+                      "validate that destination path stays within extraction root",
+                      f.name, i);
+            }
+        }
+
+        // -- Deserialization of untrusted data (CWE-502)
+        if (word_is(name, "PyMarshal_ReadObjectFromString") || word_is(name, "unpickle") ||
+            word_is(name, "text_iarchive") || word_is(name, "xmlParseMemory") || word_is(name, "binary_iarchive")) {
+            if (!a.empty() && tainted(t_, a[0], *taint)) {
+                issue("insecure-deserialization",
+                      name + "() deserializes untrusted data payload: unsafe deserialization allows attackers to execute "
+                      "arbitrary code; use safe data serialization formats like JSON with strict schema validation",
+                      f.name, i);
+            }
+        }
+
+        // -- Binding service to unrestricted IP address (CWE-1327)
+        if (word_is(name, "bind") && a.size() >= 2) {
+            bool binds_any = false;
+            for (size_t k = 0; k < t_.size(); ++k) {
+                if (t_[k].is("INADDR_ANY") || t_[k].is("in6addr_any"))
+                    binds_any = true;
+                if (t_[k].kind == Tok::String && t_[k].text.find("0.0.0.0") != std::string::npos)
+                    binds_any = true;
+            }
+            if (binds_any && c->format_seen.insert("bind_any").second) {
+                issue("insecure-bind-all",
+                      "network socket bound to INADDR_ANY (0.0.0.0): service listens on all network interfaces including public ones; "
+                      "bind explicitly to 127.0.0.1 or specific private IP unless public access is intended",
+                      f.name, i);
+            }
+        }
     }
 
     // The array a destination expression is, with its size (kUnknownSize if
@@ -3917,12 +4154,7 @@ std::vector<std::pair<std::string, Issue>> resolve_taint(const TaintDb &db) {
     if (db.callers.empty() || db.sinks.empty())
         return out;
 
-    std::map<std::string, std::vector<const TaintSink *>> sinks_of;
-    for (const TaintSink &s : db.sinks)
-        sinks_of[s.function].push_back(&s);
-    std::map<std::string, std::vector<const TaintEdge *>> edges_of;
-    for (const TaintEdge &e : db.edges)
-        edges_of[e.function].push_back(&e);
+    using State = std::pair<std::string, size_t>;
 
     // One finding per dangerous call, shown from the furthest place the text
     // is known to have come from: the same call reached from two callers is one
@@ -3933,41 +4165,67 @@ std::vector<std::pair<std::string, Issue>> resolve_taint(const TaintDb &db) {
     };
     std::map<std::string, Best> best;
 
+    // One shortest route from every (function, parameter) to a dangerous call,
+    // computed backwards from the sinks in one pass. The per-caller walk this
+    // replaces explored the same subgraph for every call site and was
+    // exponential on a tree like redis (0.2 s of analysis became minutes).
+    std::map<State, const TaintSink *> sink_at;
+    for (const TaintSink &s : db.sinks)
+        sink_at.emplace(State{s.function, s.param}, &s);
+    std::map<State, std::vector<const TaintEdge *>> callers_of;
+    for (const TaintEdge &e : db.edges)
+        callers_of[{e.callee, e.callee_param}].push_back(&e);
+    std::map<State, const TaintEdge *> next_hop;
+    std::map<State, int> distance;
+    std::vector<State> frontier;
+    frontier.reserve(sink_at.size());
+    for (const auto &entry : sink_at) {
+        distance[entry.first] = 0;
+        frontier.push_back(entry.first);
+    }
+    // Eight hops is where the old walk stopped, and more than a reader follows.
+    for (size_t q = 0; q < frontier.size(); ++q) {
+        const State state = frontier[q];
+        const int d = distance[state];
+        if (d >= 8)
+            continue;
+        const auto preds = callers_of.find(state);
+        if (preds == callers_of.end())
+            continue;
+        for (const TaintEdge *e : preds->second) {
+            const State pred{e->function, e->param};
+            if (distance.count(pred))
+                continue;
+            distance[pred] = d + 1;
+            next_hop[pred] = e;
+            frontier.push_back(pred);
+        }
+    }
+
     for (const TaintCaller &c : db.callers) {
-        // From the callee's parameter, follow the parameters it is passed on to
-        // (through however many files) until one reaches a dangerous call.
-        std::vector<const TaintEdge *> path, best_path;
-        std::set<std::pair<std::string, size_t>> on_path;
+        // From the callee's parameter, follow the chosen route until a
+        // dangerous call is reached.
+        std::vector<const TaintEdge *> best_path;
         const TaintSink *best_found = nullptr;
-        size_t best_len = 0; // the longest chain seen so far wins
-        // Depth-first with backtracking, so the chosen route is a real chain.
-        std::function<bool(const std::string &, size_t)> walk =
-            [&](const std::string &fn, size_t param) -> bool {
-                if (path.size() > 8 || !on_path.insert({fn, param}).second)
-                    return false;
-                for (const TaintSink *s : sinks_of[fn])
-                    if (s->param == param) {
-                        if (path.size() >= best_len) {
-                            best_len = path.size();
-                            best_path = path;
-                            best_found = s;
-                        }
-                        on_path.erase({fn, param});
-                        return true;
-                    }
-                for (const TaintEdge *e : edges_of[fn])
-                    if (e->param == param) {
-                        path.push_back(e);
-                        walk(e->callee, e->callee_param);
-                        path.pop_back();
-                    }
-                on_path.erase({fn, param});
-                return false;
-            };
-        walk(c.callee, c.param);
+        const State start{c.callee, c.param};
+        if (const auto direct = sink_at.find(start); direct != sink_at.end()) {
+            best_found = direct->second;
+        } else {
+            State at = start;
+            for (int hop = 0; hop < 8; ++hop) {
+                const auto step = next_hop.find(at);
+                if (step == next_hop.end())
+                    break;
+                best_path.push_back(step->second);
+                at = {step->second->callee, step->second->callee_param};
+                if (const auto sink = sink_at.find(at); sink != sink_at.end()) {
+                    best_found = sink->second;
+                    break;
+                }
+            }
+        }
         if (!best_found)
             continue;
-        // best_found/best_path hold the longest chain found from this caller.
         FlowStep sink_step{best_found->call + "()", best_found->sink_function,
                            best_found->sink_line, 0};
         // The last step is in the file the dangerous call is in, which is not

@@ -1,0 +1,1650 @@
+{
+  "tool": {
+    "name": "leakcheck",
+    "version": "1.0.0"
+  },
+  "mode": "static",
+  "command": [
+    "eval/corpus/lighttpd1.4"
+  ],
+  "summary": {
+    "problems": 58,
+    "by_type": {
+      "command-injection": 1,
+      "integer-overflow": 4,
+      "memory-leak": 5,
+      "null-dereference": 38,
+      "tls-no-verify": 4,
+      "toctou-race": 1,
+      "weak-crypto": 5
+    },
+    "files_analyzed": 197
+  },
+  "findings": [
+    {
+      "id": 1,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'i' is dereferenced at line 453 after being set to NULL at line 452: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/buffer.c",
+        "line": 453,
+        "column": 8,
+        "function": "li_tohex_lc"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "li_tohex_lc",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/buffer.c",
+            "line": 453,
+            "column": 8
+          }
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'i' is dereferenced at line 462 after being set to NULL at line 461: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/buffer.c",
+        "line": 462,
+        "column": 8,
+        "function": "li_tohex_uc"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "li_tohex_uc",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/buffer.c",
+            "line": 462,
+            "column": 8
+          }
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'dlen' is dereferenced at line 1719 after being set to NULL at line 1716: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/chunk.c",
+        "line": 1719,
+        "column": 44,
+        "function": "chunkqueue_peek_data"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "chunkqueue_peek_data",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/chunk.c",
+            "line": 1719,
+            "column": 44
+          }
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'args' is indexed at line 721 after being set to NULL at line 714: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/fdevent.c",
+        "line": 721,
+        "column": 26,
+        "function": "fdevent_sh_exec"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "fdevent_sh_exec",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/fdevent.c",
+            "line": 721,
+            "column": 26
+          }
+        ]
+      }
+    },
+    {
+      "id": 5,
+      "type": "memory-leak",
+      "category": "static",
+      "severity": "warning",
+      "message": "memory allocated with malloc() at line 637 ('envs') is not released before this return",
+      "cwe": 401,
+      "vulnerability": "Missing Release of Memory after Effective Lifetime",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/fdevent_win32.c",
+        "line": 640,
+        "column": 17,
+        "function": "fdevent_createprocess"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "fdevent_createprocess",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/fdevent_win32.c",
+            "line": 640,
+            "column": 17
+          }
+        ],
+        "alloc": [
+          {
+            "function": "fdevent_createprocess",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/fdevent_win32.c",
+            "line": 637
+          }
+        ]
+      }
+    },
+    {
+      "id": 6,
+      "type": "command-injection",
+      "category": "static",
+      "severity": "warning",
+      "message": "CreateProcessA() runs 'args', a command line made from text that comes from outside the program: a ; or | or $( ) in it runs something else with this program's rights; pass the arguments without a shell",
+      "cwe": 78,
+      "vulnerability": "Command Injection",
+      "vuln_severity": "critical",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/fdevent_win32.c",
+        "line": 735,
+        "column": 9,
+        "function": "fdevent_createprocess"
+      },
+      "occurrences": 1,
+      "flow": [
+        {
+          "function": "fdevent_createprocess",
+          "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/fdevent_win32.c",
+          "line": 735,
+          "column": 24,
+          "what": "argv"
+        },
+        {
+          "function": "fdevent_createprocess",
+          "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/fdevent_win32.c",
+          "line": 735,
+          "column": 9,
+          "what": "CreateProcessA()"
+        }
+      ],
+      "stacks": {
+        "access": [
+          {
+            "function": "fdevent_createprocess",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/fdevent_win32.c",
+            "line": 735,
+            "column": 9
+          }
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'p' is indexed at line 723 after being set to NULL at line 705: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/h1.c",
+        "line": 723,
+        "column": 25,
+        "function": "h1_chunked"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "h1_chunked",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/h1.c",
+            "line": 723,
+            "column": 25
+          }
+        ]
+      }
+    },
+    {
+      "id": 8,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'s' is indexed at line 1582 after being set to NULL at line 1559: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/h2.c",
+        "line": 1582,
+        "column": 17,
+        "function": "h2_recv_continuation"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "h2_recv_continuation",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/h2.c",
+            "line": 1582,
+            "column": 17
+          }
+        ]
+      }
+    },
+    {
+      "id": 9,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'p' is indexed at line 444 after being set to NULL at line 432: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/http_chunk.c",
+        "line": 444,
+        "column": 33,
+        "function": "http_chunk_decode_append_data"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "http_chunk_decode_append_data",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/http_chunk.c",
+            "line": 444,
+            "column": 33
+          }
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'actionfreelist' is dereferenced inside a branch that verified it is NULL at line 585: dereferencing a NULL pointer leads to an immediate crash",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+        "line": 593,
+        "column": 28,
+        "function": "Action_new"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "Action_new",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+            "line": 593,
+            "column": 28
+          }
+        ]
+      }
+    },
+    {
+      "id": 11,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'cfp' is dereferenced inside a branch that verified it is NULL at line 1453: dereferencing a NULL pointer leads to an immediate crash",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+        "line": 1455,
+        "column": 5,
+        "function": "Configlist_add"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "Configlist_add",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+            "line": 1455,
+            "column": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": 12,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'cfp' is dereferenced inside a branch that verified it is NULL at line 1479: dereferencing a NULL pointer leads to an immediate crash",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+        "line": 1481,
+        "column": 5,
+        "function": "Configlist_addbasis"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "Configlist_addbasis",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+            "line": 1481,
+            "column": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": 13,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'x' is indexed at line 1726 after being set to NULL at line 1724: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+        "line": 1726,
+        "column": 5,
+        "function": "Rule_sort"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "Rule_sort",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+            "line": 1726,
+            "column": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": 14,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'set' is indexed at line 2044 after being set to NULL at line 2039: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+        "line": 2044,
+        "column": 30,
+        "function": "msort"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "msort",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+            "line": 2044,
+            "column": 30
+          }
+        ]
+      }
+    },
+    {
+      "id": 15,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'cp' is dereferenced at line 2162 after being set to NULL at line 2158: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+        "line": 2162,
+        "column": 3,
+        "function": "handleswitch"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "handleswitch",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+            "line": 2162,
+            "column": 3
+          }
+        ]
+      }
+    },
+    {
+      "id": 16,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'cp' is dereferenced at line 3248 after being set to NULL at line 3246: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+        "line": 3248,
+        "column": 5,
+        "function": "Parse"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "Parse",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+            "line": 3248,
+            "column": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": 17,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'plink_freelist' is dereferenced inside a branch that verified it is NULL at line 3266: dereferencing a NULL pointer leads to an immediate crash",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+        "line": 3275,
+        "column": 28,
+        "function": "Plink_new"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "Plink_new",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+            "line": 3275,
+            "column": 28
+          }
+        ]
+      }
+    },
+    {
+      "id": 18,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'cp' is dereferenced at line 3688 after being set to NULL at line 3685: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+        "line": 3688,
+        "column": 5,
+        "function": "pathsearch"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "pathsearch",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+            "line": 3688,
+            "column": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": 19,
+      "type": "toctou-race",
+      "category": "static",
+      "severity": "warning",
+      "message": "access(user_templatename) checks the file at line 3797 and fopen() uses it here: in between, the file can be replaced (by a symlink to a file the caller may not touch, say), so the check proves nothing; call fopen() directly and look at errno",
+      "cwe": 367,
+      "vulnerability": "Time-of-check Time-of-use (TOCTOU) Race Condition",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+        "line": 3803,
+        "column": 10,
+        "function": "tplt_open"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "tplt_open",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+            "line": 3803,
+            "column": 10
+          }
+        ],
+        "alloc": [
+          {
+            "function": "tplt_open",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+            "line": 3797
+          }
+        ]
+      }
+    },
+    {
+      "id": 20,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'z' is indexed at line 3958 after being set to NULL at line 3952: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+        "line": 3958,
+        "column": 27,
+        "function": "append_str"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "append_str",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+            "line": 3958,
+            "column": 27
+          }
+        ]
+      }
+    },
+    {
+      "id": 21,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'xp' is dereferenced at line 4119 after being set to NULL at line 4086: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+        "line": 4119,
+        "column": 7,
+        "function": "translate_code"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "translate_code",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+            "line": 4119,
+            "column": 7
+          }
+        ]
+      }
+    },
+    {
+      "id": 22,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'stddt' is indexed at line 4314 after being set to NULL at line 4308: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+        "line": 4314,
+        "column": 14,
+        "function": "print_stack_union"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "print_stack_union",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+            "line": 4314,
+            "column": 14
+          }
+        ]
+      }
+    },
+    {
+      "id": 23,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'types' is indexed at line 4318 after being set to NULL at line 4267: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+        "line": 4318,
+        "column": 12,
+        "function": "print_stack_union"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "print_stack_union",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+            "line": 4318,
+            "column": 12
+          }
+        ]
+      }
+    },
+    {
+      "id": 24,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'sp' is dereferenced inside a branch that verified it is NULL at line 5592: dereferencing a NULL pointer leads to an immediate crash",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+        "line": 5595,
+        "column": 5,
+        "function": "Symbol_new"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "Symbol_new",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/lemon.c",
+            "line": 5595,
+            "column": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": 25,
+      "type": "weak-crypto",
+      "category": "static",
+      "severity": "warning",
+      "message": "crypt() is a broken or weak algorithm: fine for a checksum nobody attacks, not for passwords, signatures or secrecy; use SHA-256 or better, AES-GCM, or a password hash such as argon2",
+      "cwe": 327,
+      "vulnerability": "Use of a Broken or Risky Cryptographic Algorithm",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_authn_dbi.c",
+        "line": 377,
+        "column": 21,
+        "function": "mod_authn_crypt_cmp"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "mod_authn_crypt_cmp",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_authn_dbi.c",
+            "line": 377,
+            "column": 21
+          }
+        ]
+      }
+    },
+    {
+      "id": 26,
+      "type": "weak-crypto",
+      "category": "static",
+      "severity": "warning",
+      "message": "MD5_Init() is a broken or weak algorithm: fine for a checksum nobody attacks, not for passwords, signatures or secrecy; use SHA-256 or better, AES-GCM, or a password hash such as argon2",
+      "cwe": 327,
+      "vulnerability": "Use of a Broken or Risky Cryptographic Algorithm",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_authn_file.c",
+        "line": 531,
+        "column": 5,
+        "function": "apr_md5_encode"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "apr_md5_encode",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_authn_file.c",
+            "line": 531,
+            "column": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": 27,
+      "type": "weak-crypto",
+      "category": "static",
+      "severity": "warning",
+      "message": "crypt_r() is a broken or weak algorithm: fine for a checksum nobody attacks, not for passwords, signatures or secrecy; use SHA-256 or better, AES-GCM, or a password hash such as argon2",
+      "cwe": 327,
+      "vulnerability": "Use of a Broken or Risky Cryptographic Algorithm",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_authn_file.c",
+        "line": 687,
+        "column": 31,
+        "function": "mod_authn_file_crypt_cmp"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "mod_authn_file_crypt_cmp",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_authn_file.c",
+            "line": 687,
+            "column": 31
+          }
+        ]
+      }
+    },
+    {
+      "id": 28,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'refresh' is dereferenced at line 769 after being set to NULL at line 761: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_boringssl.c",
+        "line": 769,
+        "column": 13,
+        "function": "tlsext_ticket_key_find"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "tlsext_ticket_key_find",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_boringssl.c",
+            "line": 769,
+            "column": 13
+          }
+        ]
+      }
+    },
+    {
+      "id": 29,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'envp' is indexed at line 983 after being set to NULL at line 980: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_cgi.c",
+        "line": 983,
+        "column": 4,
+        "function": "cgi_create_env"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "cgi_create_env",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_cgi.c",
+            "line": 983,
+            "column": 4
+          }
+        ]
+      }
+    },
+    {
+      "id": 30,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'args' is indexed at line 1049 after being set to NULL at line 1002: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_cgi.c",
+        "line": 1049,
+        "column": 65,
+        "function": "cgi_create_env"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "cgi_create_env",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_cgi.c",
+            "line": 1049,
+            "column": 65
+          }
+        ]
+      }
+    },
+    {
+      "id": 31,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'tb' is dereferenced at line 2154 via -> after being set to NULL at line 2153: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_deflate.c",
+        "line": 2154,
+        "column": 32,
+        "function": "REQUEST_FUNC"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "REQUEST_FUNC",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_deflate.c",
+            "line": 2154,
+            "column": 32
+          }
+        ]
+      }
+    },
+    {
+      "id": 32,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'mod' is dereferenced at line 76 after being set to NULL at line 71: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_expire.c",
+        "line": 76,
+        "column": 15,
+        "function": "mod_expire_get_offset"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "mod_expire_get_offset",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_expire.c",
+            "line": 76,
+            "column": 15
+          }
+        ]
+      }
+    },
+    {
+      "id": 33,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'nmasks' is dereferenced at line 284 after being set to NULL at line 259: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_extforward.c",
+        "line": 284,
+        "column": 49,
+        "function": "mod_extforward_parse_forwarder"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "mod_extforward_parse_forwarder",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_extforward.c",
+            "line": 284,
+            "column": 49
+          }
+        ]
+      }
+    },
+    {
+      "id": 34,
+      "type": "integer-overflow",
+      "category": "static",
+      "severity": "warning",
+      "message": "calculation of 'has_ktls' involves multiplication with untrusted input '(0==strncmp(p,\"tls\",3)?(p+=3):(p=strs...': integer multiplication can wrap around without check; validate bounds before multiplying",
+      "cwe": 190,
+      "vulnerability": "Integer Overflow or Wraparound",
+      "vuln_severity": "high",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_gnutls.c",
+        "line": 844,
+        "column": 15,
+        "function": "mod_tls_linux_has_ktls"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "mod_tls_linux_has_ktls",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_gnutls.c",
+            "line": 844,
+            "column": 15
+          }
+        ]
+      }
+    },
+    {
+      "id": 35,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'argv' is indexed at line 859 after being set to NULL at line 857: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_gnutls.c",
+        "line": 859,
+        "column": 33,
+        "function": "mod_tls_linux_modprobe_tls"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "mod_tls_linux_modprobe_tls",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_gnutls.c",
+            "line": 859,
+            "column": 33
+          }
+        ]
+      }
+    },
+    {
+      "id": 36,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'ca_crl' is dereferenced at line 1206 after being set to NULL at line 1189: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_gnutls.c",
+        "line": 1206,
+        "column": 30,
+        "function": "mod_gnutls_verify_set_tlist"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "mod_gnutls_verify_set_tlist",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_gnutls.c",
+            "line": 1206,
+            "column": 30
+          }
+        ]
+      }
+    },
+    {
+      "id": 37,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'scripts' is dereferenced at line 3588 after being set to NULL at line 3577: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_magnet.c",
+        "line": 3588,
+        "column": 29,
+        "function": "magnet_attract_array"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "magnet_attract_array",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_magnet.c",
+            "line": 3588,
+            "column": 29
+          }
+        ]
+      }
+    },
+    {
+      "id": 38,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'refresh' is dereferenced at line 543 after being set to NULL at line 535: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_openssl.c",
+        "line": 543,
+        "column": 13,
+        "function": "tlsext_ticket_key_find"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "tlsext_ticket_key_find",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_openssl.c",
+            "line": 543,
+            "column": 13
+          }
+        ]
+      }
+    },
+    {
+      "id": 39,
+      "type": "integer-overflow",
+      "category": "static",
+      "severity": "warning",
+      "message": "calculation of 'has_ktls' involves multiplication with untrusted input '(0==strncmp(p,\"tls\",3)?(p+=3):(p=strs...': integer multiplication can wrap around without check; validate bounds before multiplying",
+      "cwe": 190,
+      "vulnerability": "Integer Overflow or Wraparound",
+      "vuln_severity": "high",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_openssl.c",
+        "line": 1513,
+        "column": 15,
+        "function": "mod_tls_linux_has_ktls"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "mod_tls_linux_has_ktls",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_openssl.c",
+            "line": 1513,
+            "column": 15
+          }
+        ]
+      }
+    },
+    {
+      "id": 40,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'argv' is indexed at line 1528 after being set to NULL at line 1526: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_openssl.c",
+        "line": 1528,
+        "column": 33,
+        "function": "mod_tls_linux_modprobe_tls"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "mod_tls_linux_modprobe_tls",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_openssl.c",
+            "line": 1528,
+            "column": 33
+          }
+        ]
+      }
+    },
+    {
+      "id": 41,
+      "type": "tls-no-verify",
+      "category": "static",
+      "severity": "warning",
+      "message": "SSL_set_verify() is called with SSL_VERIFY_NONE: the peer's certificate is not checked, so anyone who intercepts the connection impersonates the server; use SSL_VERIFY_PEER with a certificate the program trusts",
+      "cwe": 295,
+      "vulnerability": "Improper Certificate Validation",
+      "vuln_severity": "high",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_openssl.c",
+        "line": 2179,
+        "column": 9,
+        "function": "mod_openssl_cert_cb"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "mod_openssl_cert_cb",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_openssl.c",
+            "line": 2179,
+            "column": 9
+          }
+        ]
+      }
+    },
+    {
+      "id": 42,
+      "type": "tls-no-verify",
+      "category": "static",
+      "severity": "warning",
+      "message": "SSL_set_verify() is called with SSL_VERIFY_NONE: the peer's certificate is not checked, so anyone who intercepts the connection impersonates the server; use SSL_VERIFY_PEER with a certificate the program trusts",
+      "cwe": 295,
+      "vulnerability": "Improper Certificate Validation",
+      "vuln_severity": "high",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_openssl.c",
+        "line": 3157,
+        "column": 9,
+        "function": "mod_openssl_acme_tls_1"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "mod_openssl_acme_tls_1",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_openssl.c",
+            "line": 3157,
+            "column": 9
+          }
+        ]
+      }
+    },
+    {
+      "id": 43,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'args' is indexed at line 134 after being set to NULL at line 132: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_rrdtool.c",
+        "line": 134,
+        "column": 39,
+        "function": "mod_rrd_create_pipe"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "mod_rrd_create_pipe",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_rrdtool.c",
+            "line": 134,
+            "column": 39
+          }
+        ]
+      }
+    },
+    {
+      "id": 44,
+      "type": "integer-overflow",
+      "category": "static",
+      "severity": "warning",
+      "message": "condition 'prelen+5<=offset' adds untrusted values: the sum can overflow and wrap around, bypassing bounds checks; verify bounds before addition (e.g. 'a > max - b')",
+      "cwe": 190,
+      "vulnerability": "Integer Overflow or Wraparound",
+      "vuln_severity": "high",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_ssi.c",
+        "line": 1507,
+        "column": 15,
+        "function": "mod_ssi_read_fd"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "mod_ssi_read_fd",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_ssi.c",
+            "line": 1507,
+            "column": 15
+          }
+        ]
+      }
+    },
+    {
+      "id": 45,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'slash' is dereferenced at line 4675 after being set to NULL at line 4674: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_webdav.c",
+        "line": 4675,
+        "column": 16,
+        "function": "mod_webdav_put_prep"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "mod_webdav_put_prep",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_webdav.c",
+            "line": 4675,
+            "column": 16
+          }
+        ]
+      }
+    },
+    {
+      "id": 46,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'refresh' is dereferenced at line 432 after being set to NULL at line 424: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_wolfssl.c",
+        "line": 432,
+        "column": 13,
+        "function": "tlsext_ticket_key_find"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "tlsext_ticket_key_find",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_wolfssl.c",
+            "line": 432,
+            "column": 13
+          }
+        ]
+      }
+    },
+    {
+      "id": 47,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'certs' is indexed at line 851 after being set to NULL at line 850: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_wolfssl.c",
+        "line": 851,
+        "column": 40,
+        "function": "mod_wolfssl_load_pem_file"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "mod_wolfssl_load_pem_file",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_wolfssl.c",
+            "line": 851,
+            "column": 40
+          }
+        ]
+      }
+    },
+    {
+      "id": 48,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'certs' is indexed at line 927 after being set to NULL at line 925: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_wolfssl.c",
+        "line": 927,
+        "column": 9,
+        "function": "mod_wolfssl_load_raw_file"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "mod_wolfssl_load_raw_file",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_wolfssl.c",
+            "line": 927,
+            "column": 9
+          }
+        ]
+      }
+    },
+    {
+      "id": 49,
+      "type": "tls-no-verify",
+      "category": "static",
+      "severity": "warning",
+      "message": "wolfSSL_set_verify() is called with SSL_VERIFY_NONE: the peer's certificate is not checked, so anyone who intercepts the connection impersonates the server; use SSL_VERIFY_PEER with a certificate the program trusts",
+      "cwe": 295,
+      "vulnerability": "Improper Certificate Validation",
+      "vuln_severity": "high",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_wolfssl.c",
+        "line": 1509,
+        "column": 9,
+        "function": "mod_openssl_cert_cb"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "mod_openssl_cert_cb",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_wolfssl.c",
+            "line": 1509,
+            "column": 9
+          }
+        ]
+      }
+    },
+    {
+      "id": 50,
+      "type": "tls-no-verify",
+      "category": "static",
+      "severity": "warning",
+      "message": "wolfSSL_set_verify() is called with SSL_VERIFY_NONE: the peer's certificate is not checked, so anyone who intercepts the connection impersonates the server; use SSL_VERIFY_PEER with a certificate the program trusts",
+      "cwe": 295,
+      "vulnerability": "Improper Certificate Validation",
+      "vuln_severity": "high",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_wolfssl.c",
+        "line": 2105,
+        "column": 9,
+        "function": "mod_openssl_acme_tls_1"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "mod_openssl_acme_tls_1",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_wolfssl.c",
+            "line": 2105,
+            "column": 9
+          }
+        ]
+      }
+    },
+    {
+      "id": 51,
+      "type": "weak-crypto",
+      "category": "static",
+      "severity": "warning",
+      "message": "SHA1_Init() is a broken or weak algorithm: fine for a checksum nobody attacks, not for passwords, signatures or secrecy; use SHA-256 or better, AES-GCM, or a password hash such as argon2",
+      "cwe": 327,
+      "vulnerability": "Use of a Broken or Risky Cryptographic Algorithm",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_wstunnel.c",
+        "line": 815,
+        "column": 5,
+        "function": "create_response_rfc_6455"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "create_response_rfc_6455",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/mod_wstunnel.c",
+            "line": 815,
+            "column": 5
+          }
+        ]
+      }
+    },
+    {
+      "id": 52,
+      "type": "weak-crypto",
+      "category": "static",
+      "severity": "warning",
+      "message": "RAND_pseudo_bytes() is a predictable generator: it must not make a key, password, token, iv or nonce; use RAND_bytes() or BN_rand()",
+      "cwe": 327,
+      "vulnerability": "Use of a Broken or Risky Cryptographic Algorithm",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/rand.c",
+        "line": 437,
+        "column": 15,
+        "function": "li_rand_pseudo"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "li_rand_pseudo",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/rand.c",
+            "line": 437,
+            "column": 15
+          }
+        ]
+      }
+    },
+    {
+      "id": 53,
+      "type": "null-dereference",
+      "category": "static",
+      "severity": "warning",
+      "message": "'b' is dereferenced at line 1459 via -> after being set to NULL at line 1458: dereferencing a NULL pointer leads to an immediate crash (SIGSEGV)",
+      "cwe": 476,
+      "vulnerability": "NULL Pointer Dereference",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/request.c",
+        "line": 1459,
+        "column": 14,
+        "function": "http_request_trailer_set_whitelist"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "http_request_trailer_set_whitelist",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/request.c",
+            "line": 1459,
+            "column": 14
+          }
+        ]
+      }
+    },
+    {
+      "id": 54,
+      "type": "memory-leak",
+      "category": "static",
+      "severity": "warning",
+      "message": "address list from getaddrinfo() at line 455 ('res') is not freed with freeaddrinfo() before this return",
+      "cwe": 401,
+      "vulnerability": "Missing Release of Memory after Effective Lifetime",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/sock_addr.c",
+        "line": 458,
+        "column": 17,
+        "function": "sock_addr_from_str_hints"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "sock_addr_from_str_hints",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/sock_addr.c",
+            "line": 458,
+            "column": 17
+          }
+        ],
+        "alloc": [
+          {
+            "function": "sock_addr_from_str_hints",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/sock_addr.c",
+            "line": 455
+          }
+        ]
+      }
+    },
+    {
+      "id": 55,
+      "type": "memory-leak",
+      "category": "static",
+      "severity": "warning",
+      "message": "address list from getaddrinfo() at line 496 is leaked when 'res' is overwritten",
+      "cwe": 401,
+      "vulnerability": "Missing Release of Memory after Effective Lifetime",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/sock_addr.c",
+        "line": 502,
+        "column": 26,
+        "function": "sock_addr_from_str_hints"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "sock_addr_from_str_hints",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/sock_addr.c",
+            "line": 502,
+            "column": 26
+          }
+        ],
+        "alloc": [
+          {
+            "function": "sock_addr_from_str_hints",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/sock_addr.c",
+            "line": 496
+          }
+        ]
+      }
+    },
+    {
+      "id": 56,
+      "type": "memory-leak",
+      "category": "static",
+      "severity": "warning",
+      "message": "address list from getaddrinfo() at line 502 ('res') is not freed with freeaddrinfo() before this return",
+      "cwe": 401,
+      "vulnerability": "Missing Release of Memory after Effective Lifetime",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/sock_addr.c",
+        "line": 515,
+        "column": 17,
+        "function": "sock_addr_from_str_hints"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "sock_addr_from_str_hints",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/sock_addr.c",
+            "line": 515,
+            "column": 17
+          }
+        ],
+        "alloc": [
+          {
+            "function": "sock_addr_from_str_hints",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/sock_addr.c",
+            "line": 502
+          }
+        ]
+      }
+    },
+    {
+      "id": 57,
+      "type": "memory-leak",
+      "category": "static",
+      "severity": "warning",
+      "message": "address list from getaddrinfo() at line 544 ('res') is not freed with freeaddrinfo() before this return",
+      "cwe": 401,
+      "vulnerability": "Missing Release of Memory after Effective Lifetime",
+      "vuln_severity": "medium",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/sock_addr.c",
+        "line": 547,
+        "column": 17,
+        "function": "sock_addr_from_str_hints"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "sock_addr_from_str_hints",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/sock_addr.c",
+            "line": 547,
+            "column": 17
+          }
+        ],
+        "alloc": [
+          {
+            "function": "sock_addr_from_str_hints",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/src/sock_addr.c",
+            "line": 544
+          }
+        ]
+      }
+    },
+    {
+      "id": 58,
+      "type": "integer-overflow",
+      "category": "static",
+      "severity": "warning",
+      "message": "condition '*p!='\\0'||p==r+sizeof(\"CONTENT_LENGTH...' adds untrusted values: the sum can overflow and wrap around, bypassing bounds checks; verify bounds before addition (e.g. 'a > max - b')",
+      "cwe": 190,
+      "vulnerability": "Integer Overflow or Wraparound",
+      "vuln_severity": "high",
+      "location": {
+        "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/tests/scgi-responder.c",
+        "line": 203,
+        "column": 29,
+        "function": "scgi_process"
+      },
+      "occurrences": 1,
+      "stacks": {
+        "access": [
+          {
+            "function": "scgi_process",
+            "file": "/home/saldev/projects/cpp-leakcheck/eval/corpus/lighttpd1.4/tests/scgi-responder.c",
+            "line": 203,
+            "column": 29
+          }
+        ]
+      }
+    }
+  ],
+  "notes": []
+}

@@ -1,0 +1,29 @@
+# .gitlab-ci.yml: gate a merge request on new findings, with the results in
+# the merge request's test tab. leakcheck must be on PATH in the image (install
+# it from a release tarball in before_script, or use the image from
+# docs/docker.md). The first run writes the baseline; later runs compare.
+leakcheck:
+  stage: test
+  image: debian:bookworm-slim
+  variables:
+    LEAKCHECK_VERSION: "1.0.0"
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends curl ca-certificates
+    - |
+      curl -fsSL "https://github.com/${CI_PROJECT_NAMESPACE}/leakcheck/releases/download/v${LEAKCHECK_VERSION}/leakcheck-${LEAKCHECK_VERSION}-linux-x86_64.tar.gz" \
+        | tar xz -C /tmp
+      install -m 0755 "/tmp/leakcheck-${LEAKCHECK_VERSION}-linux-x86_64/bin/leakcheck" /usr/local/bin/leakcheck
+      install -m 0755 "/tmp/leakcheck-${LEAKCHECK_VERSION}-linux-x86_64/bin/libleakcheck_preload.so" /usr/local/bin/
+  script:
+    # --baseline compare keeps the 4,000 findings the project already had out of
+    # the gate; an expired suppression fails with status 3, not a silent pass.
+    - leakcheck static -f junit -o leakcheck.xml --baseline compare .leakcheck-baseline.txt .
+  artifacts:
+    when: always
+    reports:
+      junit: leakcheck.xml
+    paths:
+      - leakcheck.xml
+  # Remove this while adopting: the first pipeline should run the baseline step.
+  # The baseline itself is written once, locally or in a setup job:
+  #   leakcheck static --baseline write .leakcheck-baseline.txt .

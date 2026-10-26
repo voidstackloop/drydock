@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <fstream>
 #include <iostream>
+#include <map>
 
 namespace lcreport {
 
@@ -477,6 +478,15 @@ const Rule *find_rule(const std::string &id) {
     return nullptr;
 }
 
+uint64_t stable_hash(const std::string &text) {
+    uint64_t h = 1469598103934665603ull; // FNV offset basis
+    for (unsigned char c : text) {
+        h ^= c;
+        h *= 1099511628211ull; // FNV prime
+    }
+    return h;
+}
+
 std::string hex(uint64_t v) {
     char b[32];
     std::snprintf(b, sizeof b, "0x%llx", static_cast<unsigned long long>(v));
@@ -484,6 +494,8 @@ std::string hex(uint64_t v) {
 }
 
 std::string severity_of(const Finding &f) {
+    if (!f.severity_override.empty())
+        return f.severity_override;
     if (f.category == "static")
         return "warning";
     // Things an installer, ssh or a debugger also do: the person reading the
@@ -535,6 +547,53 @@ bool is_resource(const Finding &f) {
 bool is_problem(const Finding &f) {
     const std::string s = severity_of(f);
     return s == "error" || s == "warning";
+}
+
+bool is_problem_at(const Finding &f, const std::string &min_severity) {
+    auto rank = [](const std::string &s) {
+        return s == "error" ? 2 : s == "warning" ? 1 : 0;
+    };
+    return rank(severity_of(f)) >= rank(min_severity);
+}
+
+bool strict_rule(const std::string &type) {
+    // Measured on eval/corpus (eval/PRECISION.md): both were wrong far more
+    // often than they were right. They stay available for a careful reader
+    // with --strict, but a default run does not spend the reader's trust on
+    // them.
+    return type == lcproto::kNullDeref || type == lcproto::kIntegerOverflow;
+}
+
+bool known_rule(const std::string &type) {
+    return find_rule(type) != nullptr;
+}
+
+void apply_rule_policy(Report &r, const std::vector<RulePolicy> &policy, bool strict) {
+    std::map<std::string, bool> enabled;
+    for (const RulePolicy &setting : policy)
+        enabled[setting.id] = setting.enabled;
+    size_t disabled = 0;
+    size_t strict_hidden = 0;
+    std::erase_if(r.findings, [&](const Finding &f) {
+        if (const auto it = enabled.find(f.type); it != enabled.end()) {
+            if (!it->second)
+                ++disabled;
+            return !it->second;
+        }
+        if (!strict && strict_rule(f.type)) {
+            ++strict_hidden;
+            return true;
+        }
+        return false;
+    });
+    if (disabled)
+        r.notes.push_back(std::to_string(disabled) +
+                          " finding(s) hidden by disabled rule policy");
+    if (strict_hidden)
+        r.notes.push_back(
+            std::to_string(strict_hidden) +
+            " finding(s) from rules that did not meet the false-alarm budget are hidden "
+            "(--strict shows all; --enable-rule shows one; see eval/PRECISION.md)");
 }
 
 namespace {
@@ -663,7 +722,7 @@ bool write_report(const Report &r, const std::string &format,
                   const std::string &path, std::string *error) {
     std::ofstream file;
     std::ostream *os = &std::cout;
-    if (!path.empty()) {
+    if (!path.empty() && path != "-") {
         file.open(path, std::ios::out | std::ios::trunc);
         if (!file) {
             *error = "cannot write report to '" + path + "'";
@@ -675,6 +734,20 @@ bool write_report(const Report &r, const std::string &format,
         render_json(r, *os);
     else if (format == "sarif")
         render_sarif(r, *os);
+    else if (format == "junit")
+        render_junit(r, *os);
+    else if (format == "html")
+        render_html(r, *os);
+    else if (format == "markdown" || format == "md")
+        render_markdown(r, *os);
+    else if (format == "csv")
+        render_csv(r, *os);
+    else if (format == "gitlab")
+        render_gitlab(r, *os);
+    else if (format == "sonarqube")
+        render_sonarqube(r, *os);
+    else if (format == "patch")
+        render_patch(r, *os);
     else
         render_console(r, *os);
     os->flush();
@@ -683,6 +756,39 @@ bool write_report(const Report &r, const std::string &format,
         return false;
     }
     return true;
+}
+
+void render_metrics(const Report &r, std::ostream &os) {
+    size_t critical = 0, high = 0, medium = 0, low = 0;
+    for (const Finding &f : r.findings) {
+        const std::string s = severity_of(f);
+        if (s == "critical")
+            ++critical;
+        else if (s == "high" || s == "error")
+            ++high;
+        else if (s == "medium" || s == "warning")
+            ++medium;
+        else
+            ++low;
+    }
+    const size_t problems = critical + high + (r.min_severity != "error" ? medium : 0);
+    const uint64_t debt_score = critical * 10 + high * 5 + medium * 2 + low * 1;
+
+    Json j(os);
+    j.begin_object()
+        .kv("files_analyzed", uint64_t(r.files_analyzed))
+        .kv("findings_total", uint64_t(r.findings.size()))
+        .kv("problems", uint64_t(problems))
+        .key("severity")
+        .begin_object()
+            .kv("critical", uint64_t(critical))
+            .kv("high", uint64_t(high))
+            .kv("medium", uint64_t(medium))
+            .kv("low", uint64_t(low))
+        .end_object()
+        .kv("security_debt_score", debt_score)
+        .kv("gate_status", problems == 0 ? "PASSED" : "FAILED")
+    .end_object();
 }
 
 // ---- Json ----------------------------------------------------------------

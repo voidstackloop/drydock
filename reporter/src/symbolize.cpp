@@ -317,7 +317,7 @@ void symbolize(Report &r) {
             for (size_t i = 0; i < s->size() && i < 6; ++i)
                 id += '|' + (*s)[i].function + '@' + (*s)[i].file + ':' +
                       std::to_string((*s)[i].line);
-        f.key = hex(std::hash<std::string>{}(id));
+        f.key = hex(lcreport::stable_hash(id));
     }
 }
 

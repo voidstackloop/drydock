@@ -107,8 +107,21 @@ inline constexpr const char *kNullDeref = "null-dereference";
 inline constexpr const char *kInsecurePrng = "insecure-prng";
 inline constexpr const char *kSsrf = "ssrf";
 inline constexpr const char *kXss = "xss";
+inline constexpr const char *kOobRead = "out-of-bounds-read";
+inline constexpr const char *kOobWrite = "out-of-bounds-write";
 inline constexpr const char *kOffByOne = "off-by-one";
 inline constexpr const char *kIntegerOverflow = "integer-overflow";
+inline constexpr const char *kInsecureTempFile = "insecure-tempfile";
+inline constexpr const char *kHardcodedKeyIv = "hardcoded-key-iv";
+inline constexpr const char *kUncheckedSecurityReturn = "unchecked-security-return";
+inline constexpr const char *kUnclearedSensitive = "uncleared-sensitive-data";
+inline constexpr const char *kReturnStackAddress = "return-stack-address";
+inline constexpr const char *kUninitVariable = "uninitialized-variable";
+inline constexpr const char *kTimingAttack = "timing-attack";
+inline constexpr const char *kZipSlip = "zip-slip";
+inline constexpr const char *kInsecureDeserialization = "insecure-deserialization";
+inline constexpr const char *kInsecureBindAll = "insecure-bind-all";
+inline constexpr const char *kHighEntropySecret = "high-entropy-secret";
 // One finding type per malware family that --malware looks for (the five families
 // that already had a type keep it: ransomware-pattern, fileless-exec, dropper,
 // credential-access, cryptominer). malware.h lists all 100.

@@ -806,6 +806,26 @@ TEST(vulnerability_metadata_rendered) {
     }
 }
 
+TEST(rule_policy_is_ordered_and_can_enable_one_strict_rule) {
+    Report r;
+    r.findings = {finding(lcproto::kLeak, "leak"),
+                  finding(lcproto::kDoubleFree, "heap"),
+                  finding(lcproto::kNullDeref, "static")};
+    const std::vector<RulePolicy> policy = {
+        {lcproto::kLeak, false},
+        {lcproto::kNullDeref, true},
+        {lcproto::kDoubleFree, false},
+        {lcproto::kLeak, true},
+    };
+    apply_rule_policy(r, policy, false);
+    CHECK_EQ(r.findings.size(), size_t(2));
+    CHECK_EQ(r.findings[0].type, std::string(lcproto::kLeak));
+    CHECK_EQ(r.findings[1].type, std::string(lcproto::kNullDeref));
+    CHECK(r.notes.size() == 1 && r.notes[0].find("1 finding(s)") != std::string::npos);
+    CHECK(known_rule(lcproto::kLeak));
+    CHECK(!known_rule("no-such-rule"));
+}
+
 // Windows has no fnmatch, so suppress.cpp brings its own; on Linux it must agree.
 TEST(glob_match_is_fnmatch) {
     struct Row {
@@ -827,6 +847,77 @@ TEST(glob_match_is_fnmatch) {
 #ifndef _WIN32
         CHECK_EQ(fnmatch(r.pattern, r.text, 0) == 0, r.match);
 #endif
+    }
+}
+
+TEST(render_new_formats_markdown_csv_gitlab_sonarqube_patch_metrics) {
+    Report r;
+    r.mode = "static";
+    r.files_analyzed = 3;
+
+    Finding f;
+    f.type = lcproto::kSqlInjection;
+    f.category = "static";
+    f.message = "sqlite3_exec() runs untrusted query text";
+    Frame fr;
+    fr.file = "src/db.c";
+    fr.line = 42;
+    fr.column = 5;
+    fr.function = "run_query";
+    f.access.push_back(fr);
+    r.findings.push_back(f);
+
+    // Markdown
+    {
+        std::ostringstream os;
+        render_markdown(r, os);
+        const std::string s = os.str();
+        CHECK(s.find("# \xF0\x9F\x9B\xA1\xEF\xB8\x8F leakcheck Security Report") != std::string::npos);
+        CHECK(s.find("sql-injection") != std::string::npos);
+        CHECK(s.find("CWE-89") != std::string::npos);
+        CHECK(s.find("src/db.c:42") != std::string::npos);
+    }
+
+    // CSV
+    {
+        std::ostringstream os;
+        render_csv(r, os);
+        const std::string s = os.str();
+        CHECK(s.find("rule_id,cwe,severity,file,line,column,function,category,message,help_url") != std::string::npos);
+        CHECK(s.find("sql-injection,89") != std::string::npos);
+        CHECK(s.find("src/db.c,42,5,run_query") != std::string::npos);
+    }
+
+    // GitLab
+    {
+        std::ostringstream os;
+        render_gitlab(r, os);
+        const std::string s = os.str();
+        CHECK(s.find("\"check_name\": \"sql-injection\"") != std::string::npos);
+        CHECK(s.find("\"path\": \"src/db.c\"") != std::string::npos);
+        CHECK(s.find("\"begin\": 42") != std::string::npos);
+    }
+
+    // SonarQube
+    {
+        std::ostringstream os;
+        render_sonarqube(r, os);
+        const std::string s = os.str();
+        CHECK(s.find("\"engineId\": \"leakcheck\"") != std::string::npos);
+        CHECK(s.find("\"ruleId\": \"sql-injection\"") != std::string::npos);
+        CHECK(s.find("\"filePath\": \"src/db.c\"") != std::string::npos);
+        CHECK(s.find("\"startLine\": 42") != std::string::npos);
+    }
+
+    // Metrics
+    {
+        std::ostringstream os;
+        render_metrics(r, os);
+        const std::string s = os.str();
+        CHECK(s.find("\"files_analyzed\": 3") != std::string::npos);
+        CHECK(s.find("\"findings_total\": 1") != std::string::npos);
+        CHECK(s.find("\"security_debt_score\":") != std::string::npos);
+        CHECK(s.find("\"gate_status\": \"FAILED\"") != std::string::npos);
     }
 }
 

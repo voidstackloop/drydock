@@ -1,3 +1,9 @@
+// sys_signame and the fseeko/ftello declarations live behind the full Darwin
+// API level; ask for it before the first system header is pulled in.
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+#define _DARWIN_C_SOURCE 1
+#endif
+
 #include "signals.h"
 #include "init.h"
 #include "protocol.h"
@@ -12,6 +18,18 @@
 #include <dlfcn.h>
 #include <setjmp.h>
 #include <signal.h>
+#if defined(__APPLE__)
+// fseeko/ftello are declared in stdio, and Darwin does not pull it in for us.
+// Not on Linux: there the wrappers below are the libc names themselves and
+// deliberately take FILE* as void*, which the real declarations would reject.
+#include <cstdio>
+#endif
+
+#if defined(__APPLE__)
+// Darwin calls the handler type sig_t; glibc calls it sighandler_t. The
+// wrapper's name is lc_signal either way (see lc_api.h).
+using sighandler_t = sig_t;
+#endif
 
 namespace lc::signals {
 
@@ -29,6 +47,18 @@ struct Handler {
 Handler g_handlers[kSignals];
 LC_TLS uint32_t tl_install_stack;
 LC_TLS bool tl_reported; // this run of the handler was reported already
+
+// "SEGV" for a signal, or null: glibc has sigabbrev_np, Darwin has the same
+// names in sys_signame (both without the "SIG" prefix).
+const char *signal_abbreviation(int sig) {
+#if defined(__APPLE__)
+    if (sig > 0 && sig < NSIG)
+        return sys_signame[sig];
+    return nullptr;
+#else
+    return sigabbrev_np(sig);
+#endif
+}
 
 void trampoline(int sig, siginfo_t *si, void *ctx) {
     const Handler h = g_handlers[sig];
@@ -162,7 +192,7 @@ void unsafe_call_slow(const char *what) {
     char m[384];
     Buf msg(m, sizeof m);
     msg.s(what).s(" is called by the handler of signal ").u(uint64_t(sig));
-    if (const char *abbrev = sigabbrev_np(sig))
+    if (const char *abbrev = signal_abbreviation(sig))
         msg.s(" (SIG").s(abbrev).c(')');
     msg.s(", but it is not async-signal-safe: when the signal arrives while "
           "the program is inside it (or holds the same lock), the program "
@@ -236,7 +266,9 @@ LC_API int LC_FN(sigaction)(int sig, const struct sigaction *act,
     return rc;
 }
 
-// glibc's signal() installs through its internal sigaction: go through ours.
+// signal() installs through sigaction: go through our wrapper, not the real
+// one, or the trampoline in g_handlers is not installed on Darwin (where the
+// call would otherwise bind to libSystem).
 LC_API sighandler_t LC_FN(signal)(int sig, sighandler_t handler) noexcept {
     struct sigaction act, old;
     memset(&act, 0, sizeof act);
@@ -244,7 +276,7 @@ LC_API sighandler_t LC_FN(signal)(int sig, sighandler_t handler) noexcept {
     act.sa_flags = SA_RESTART;
     sigemptyset(&act.sa_mask);
     sigaddset(&act.sa_mask, sig);
-    return sigaction(sig, &act, &old) == 0 ? old.sa_handler : SIG_ERR;
+    return LC_FN(sigaction)(sig, &act, &old) == 0 ? old.sa_handler : SIG_ERR;
 }
 
 LC_API int LC_FN(sigprocmask)(int how, const sigset_t *set, sigset_t *old) noexcept {
@@ -470,8 +502,10 @@ LC_API int LC_FN(fseeko)(void *f, long off, int whence) {
     return REAL(fseeko)(f, off, whence);
 }
 
+#if !defined(__APPLE__)
 // Same address as fseeko in glibc, but a different symbol name.
 LC_API int LC_FN(fseeko64)(void *f, long off, int whence) { return fseeko(f, off, whence); }
+#endif
 
 LC_API long LC_FN(ftell)(void *f) {
     if (closed_stream(f, "ftell()"))
@@ -485,7 +519,9 @@ LC_API long LC_FN(ftello)(void *f) {
     return REAL(ftello)(f);
 }
 
+#if !defined(__APPLE__)
 LC_API long LC_FN(ftello64)(void *f) { return ftello(f); }
+#endif
 
 LC_API void LC_FN(rewind)(void *f) {
     if (closed_stream(f, "rewind()"))

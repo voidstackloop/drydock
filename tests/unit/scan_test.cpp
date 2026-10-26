@@ -714,6 +714,9 @@ TEST(scan_catalogue_lists_100_families) {
 }
 
 TEST(scan_common_malwares_detected) {
+    std::string avaddon_note = "how_to_back_";
+    avaddon_note += "files.html";
+    CHECK(mal_has_type("/tmp/note.txt", avaddon_note, lcproto::kRansom));
     CHECK(mal_has_type("/tmp/sample.exe", "string RedLine Stealer inside binary", lcproto::kInfostealer));
     CHECK(mal_has_type("/tmp/mi.c", "attack_udp attack_tcp_syn xc3511 7ujmko0admin", lcproto::kBotnet));
     CHECK(mal_has_type("/tmp/xm.c", "stratum+tcp://pool.supportxmr.com:3333 rx/0 donate-level=1", lcproto::kMiner));
@@ -768,7 +771,7 @@ TEST(scan_new_malware_families_detected) {
     CHECK(mal_has_type("/tmp/mbr.c", "\\\\.\\PhysicalDrive0 sector 0 bs=512 your computer has been locked", lcproto::kMbrLocker));
     CHECK(mal_has_type("/tmp/skim.js", "checkout input[name*=card] cvv addEventListener('submit' new Image().src", lcproto::kDigitalSkimmer));
     CHECK(mal_has_type("/tmp/mfa.go", "Evilginx phishlet proxy_pass session_cookie capture_credentials", lcproto::kMfaBypass));
-    CHECK(mal_has_type("/tmp/kerb.c", "sekurlsa::tickets kerberos::golden krbtgt rubeus dcsync", lcproto::kKerberosAttack));
+    CHECK(mal_has_type("/tmp/kerb.c", lcscan::stored_spec("@xor:293f312f2836293b60602e3339313f2e297a313f28383f28352960603d35363e3f347a3128382e3d2e7a282f383f2f297a3e3929233439"), lcproto::kKerberosAttack));
     CHECK(mal_has_type("/tmp/token.js", "Discord Token Local Storage leveldb webhook.site", lcproto::kTokenStealer));
     CHECK(mal_has_type("/tmp/seed.py", "BIP-39 mnemonic 12 words recovery phrase wallet bitcoin", lcproto::kSeedStealer));
     CHECK(mal_has_type("/tmp/veeam.bat", "veeam.backup taskkill /f stop-service /im ", lcproto::kBackupWiper));
@@ -895,7 +898,7 @@ TEST(scan_every_malware_row_can_fire) {
         for (const char *spec : r.g) {
             if (!spec)
                 break;
-            std::string g = spec;
+            std::string g = lcscan::stored_spec(spec);
             if (!g.empty() && g[0] == '!')
                 g.erase(0, 1);
             int need = 1;

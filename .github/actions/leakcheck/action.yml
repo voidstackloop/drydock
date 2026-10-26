@@ -1,0 +1,112 @@
+name: leakcheck
+description: Gate a pull request on new findings, with SARIF annotations and a baseline
+author: leakcheck
+
+# The action runs a leakcheck binary that is already on PATH. Install it before
+# this step from a release tarball or your package mirror; this action does not
+# download or build anything.
+inputs:
+  target:
+    description: File, directory or compile_commands.json to analyse
+    required: false
+    default: "."
+  mode:
+    description: static, dynamic or scan
+    required: false
+    default: "static"
+  format:
+    description: Report format. sarif is what code scanning reads; junit suits test reporters
+    required: false
+    default: "sarif"
+  output:
+    description: Where the report is written
+    required: false
+    default: "leakcheck.sarif"
+  baseline:
+    description: Baseline file. Empty means gate on everything
+    required: false
+    default: ""
+  baseline-mode:
+    description: compare (gate on new findings) or write (record the current ones and pass)
+    required: false
+    default: "compare"
+  suppressions:
+    description: Suppression file
+    required: false
+    default: ""
+  min-severity:
+    description: Weakest severity that fails the gate (error, warning or note)
+    required: false
+    default: "warning"
+  extra-args:
+    description: Further arguments, e.g. "--exclude vendor/**"
+    required: false
+    default: ""
+  upload-sarif:
+    description: Upload the SARIF report to GitHub code scanning
+    required: false
+    default: "true"
+
+outputs:
+  exit-code:
+    description: The status leakcheck returned (0 clean, 2 findings, 1 or 3 errors)
+    value: ${{ steps.scan.outputs.exit_code }}
+
+runs:
+  using: composite
+  steps:
+    - name: Register the console problem matcher
+      shell: bash
+      run: echo "::add-matcher::${{ github.action_path }}/problem-matcher.json"
+
+    - name: Run leakcheck
+      id: scan
+      shell: bash
+      env:
+        LC_MODE: ${{ inputs.mode }}
+        LC_FORMAT: ${{ inputs.format }}
+        LC_OUTPUT: ${{ inputs.output }}
+        LC_TARGET: ${{ inputs.target }}
+        LC_BASELINE: ${{ inputs.baseline }}
+        LC_BASELINE_MODE: ${{ inputs.baseline-mode }}
+        LC_SUPPRESSIONS: ${{ inputs.suppressions }}
+        LC_MIN_SEVERITY: ${{ inputs.min-severity }}
+        LC_EXTRA: ${{ inputs.extra-args }}
+      run: |
+        set -u
+        if ! command -v leakcheck >/dev/null 2>&1; then
+          echo "::error::leakcheck is not on PATH. Download a release binary (or build it) in an earlier step."
+          exit 1
+        fi
+        args=("$LC_MODE" "-f" "$LC_FORMAT" "-o" "$LC_OUTPUT" "--min-severity" "$LC_MIN_SEVERITY")
+        if [ -n "$LC_BASELINE" ]; then
+          args+=("--baseline" "$LC_BASELINE_MODE" "$LC_BASELINE")
+        fi
+        if [ -n "$LC_SUPPRESSIONS" ]; then
+          args+=("-s" "$LC_SUPPRESSIONS")
+        fi
+        if [ -n "$LC_EXTRA" ]; then
+          # shellcheck disable=SC2206
+          args+=($LC_EXTRA)
+        fi
+        set +e
+        leakcheck "${args[@]}" "$LC_TARGET"
+        code=$?
+        set -e
+        echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+        # Keep going: the upload below needs the report even when the gate fails.
+        exit 0
+
+    - name: Upload SARIF
+      if: always() && inputs.upload-sarif == 'true' && steps.scan.outputs.exit_code != ''
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ inputs.output }}
+        category: leakcheck-${{ inputs.mode }}
+
+    - name: Fail on the gate result
+      if: always() && steps.scan.outputs.exit_code != ''
+      shell: bash
+      env:
+        LC_EXIT: ${{ steps.scan.outputs.exit_code }}
+      run: exit "$LC_EXIT"
