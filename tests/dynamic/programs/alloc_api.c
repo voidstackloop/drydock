@@ -95,9 +95,12 @@ int main(void) {
     free(s);
     free(n);
 
+#if !defined(__APPLE__) // Darwin has no reallocarray(); the runtime's wrapper
+                        // for it stays unused there too
     char *ra = reallocarray(NULL, 10, 10);
     CHECK(ra != NULL);
     free(ra);
+#endif
 
     printf("alloc_api failures=%d\n", failures);
     return failures ? 1 : 0;
