@@ -1,0 +1,7 @@
+leakcheck-baseline 1
+47cdd4ca5022c2b6	cryptominer	docs/REFERENCE.md	offset 0xcfd9	it contains the address of a mining pool (stratum+tcp://)
+5c3eb52278695a7f	cryptominer	shared/include/rules.h	offset 0x547c	it contains the address of a mining pool (stratum+tcp://) (and 2 more of the same kind)
+60567106b955d673	cryptominer	docs/rules/cryptominer.md	offset 0xe0	it contains the address of a mining pool (stratum+tcp://)
+8df65c3849adefce	cryptominer	reporter/src/report.cpp	offset 0x70b8	it contains the address of a mining pool (stratum+tcp://)
+a4af8d599fa6ef89	cryptominer	static-engine/src/scan.cpp	offset 0x3111	it contains the address of a mining pool (stratum+tcp://) (and 3 more of the same kind)
+e7bf720d49275a2f	malware-signature	static-engine/src/scan.cpp	offset 0x3278	it contains the name of the c99 web shell (and 6 more of the same kind)
