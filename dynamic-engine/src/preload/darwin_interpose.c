@@ -18,7 +18,6 @@ I(malloc)
 I(calloc)
 I(realloc)
 I(free)
-I(reallocarray)
 I(aligned_alloc)
 I(posix_memalign)
 I(valloc)
@@ -51,9 +50,10 @@ I(socket)
 I(socketpair)
 I(accept)
 I(pipe)
-// accept4, pipe2 and fexecve are Linux/glibc names: libSystem has no symbol to
-// pair them with, and naming one here is an undefined symbol at link time.
-// Their lc_ wrappers stay in the dylib unused.
+// accept4, pipe2, fexecve, reallocarray and umount are Linux/glibc names:
+// libSystem has no symbol to pair them with, and naming one here is an
+// undefined symbol at link time (Darwin's unmount() is a different call, with
+// a flags argument). Their lc_ wrappers stay in the dylib unused.
 I(dup)
 I(dup2)
 I(fcntl)
@@ -143,7 +143,6 @@ I(fchmodat)
 I(chown)
 I(lchown)
 I(mount)
-I(umount)
 I(fchown)
 I(fchownat)
 I(mkdir)
@@ -191,7 +190,6 @@ I(_longjmp)
 
 I(pthread_mutex_lock)
 I(pthread_mutex_trylock)
-I(pthread_mutex_timedlock)
 I(pthread_mutex_unlock)
 I(pthread_mutex_init)
 I(pthread_mutex_destroy)
@@ -199,8 +197,7 @@ I(pthread_rwlock_rdlock)
 I(pthread_rwlock_wrlock)
 I(pthread_rwlock_tryrdlock)
 I(pthread_rwlock_trywrlock)
-I(pthread_rwlock_timedrdlock)
-I(pthread_rwlock_timedwrlock)
+// The timed rwlock calls are POSIX-optional and Darwin omits them.
 I(pthread_rwlock_unlock)
 I(pthread_rwlock_init)
 I(pthread_rwlock_destroy)
