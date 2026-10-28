@@ -90,9 +90,23 @@ jobs:
           '-DCMAKE_C_FLAGS=-Werror -Wno-error=unused-function -Wno-error=unused-variable -Wno-error=unused-const-variable'
           '-DCMAKE_CXX_FLAGS=-Werror -Wno-error=unused-function -Wno-error=unused-variable -Wno-error=unused-const-variable'
       - name: Build
-        run: cmake --build build --parallel
+        run: |
+          set -o pipefail
+          if ! cmake --build build --parallel 2>&1 | tee build-macos.log; then
+            # A job log needs write access to download; annotations are public.
+            # Re-emit the compiler's own words so a red build says why it is red.
+            grep -E "error:|undefined symbol:" build-macos.log | head -n 10 |
+              while IFS= read -r line; do echo "::error title=macos build::${line}"; done
+            exit 1
+          fi
       - name: Unit tests and the command-line suites
-        run: ctest --test-dir build --output-on-failure
+        run: |
+          set -o pipefail
+          if ! ctest --test-dir build --output-on-failure 2>&1 | tee tests-macos.log; then
+            grep -E "^(FAIL|The following tests FAILED)|error:" tests-macos.log | head -n 10 |
+              while IFS= read -r line; do echo "::error title=macos tests::${line}"; done
+            exit 1
+          fi
 
   # Reports only, without the runtime: this job proves the JSON and SARIF are
   # the same bytes as on the other two systems, and stays fast enough that a
