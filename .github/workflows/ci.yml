@@ -94,8 +94,10 @@ jobs:
           set -o pipefail
           if ! cmake --build build --parallel 2>&1 | tee build-macos.log; then
             # A job log needs write access to download; annotations are public.
-            # Re-emit the compiler's own words so a red build says why it is red.
-            grep -E "error:|undefined symbol:" build-macos.log | head -n 10 |
+            # Re-emit the compiler's and linker's own words: the failing target,
+            # the diagnostics, and the symbols the linker could not find.
+            grep -E "^(FAILED:)|error:|Undefined symbols|^  \"_|duplicate symbol|^ld: " \
+              build-macos.log | head -n 10 |
               while IFS= read -r line; do echo "::error title=macos build::${line}"; done
             exit 1
           fi
