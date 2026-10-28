@@ -96,14 +96,16 @@ jobs:
             # A job log needs write access to download; annotations are public.
             # Re-emit the compiler's and linker's own words: the failing target,
             # the diagnostics, and the symbols the linker could not find.
-            # Ten annotations per step is the cap, so the missing symbols go in
-            # one line: otherwise the rest of the linker's list is invisible.
-            syms=$(grep -E '^  "_' build-macos.log | sed -E 's/^  "([^"]+)".*/\1/' |
-              paste -sd' ' - | cut -c1-900)
-            [ -n "$syms" ] && echo "::error title=macos undefined symbols::${syms}"
-            grep -E "^(FAILED:)|error:|Undefined symbols|duplicate symbol|^ld: " \
-              build-macos.log | head -n 8 |
+            # Ten annotations per step is the cap. The tail catches a failure
+            # worded in a way no pattern anticipates; then the diagnostics, then
+            # every missing symbol on one line.
+            tail -n 5 build-macos.log |
+              while IFS= read -r line; do echo "::error title=macos build tail::${line}"; done
+            grep -iE "error|undefined symbol|duplicate symbol" build-macos.log | head -n 3 |
               while IFS= read -r line; do echo "::error title=macos build::${line}"; done
+            syms=$(grep -E '^  "_' build-macos.log | sed -E 's/^  "([^"]+)".*/\1/' |
+              paste -sd' ' - | cut -c1-800)
+            [ -n "$syms" ] && echo "::error title=macos undefined symbols::${syms}"
             exit 1
           fi
       - name: Unit tests and the command-line suites
