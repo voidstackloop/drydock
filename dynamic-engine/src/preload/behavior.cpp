@@ -342,6 +342,26 @@ int proc_of_other(const char *path) {
     return !strcmp(p, "/mem") ? 1 : !strcmp(p, "/environ") ? 2 : 0;
 }
 
+// The process's own memory map, as "/proc/self/maps" or "/proc/<pid>/maps"
+// with its own pid: what a program reads for ordinary self-inspection.
+bool own_maps(const char *path) {
+    if (strncmp(path, "/proc/", 6))
+        return false;
+    const char *p = path + 6;
+    if (!strncmp(p, "self/", 5))
+        p += 5;
+    else {
+        uint32_t pid = 0;
+        int digits = 0;
+        for (; *p >= '0' && *p <= '9' && digits < 10; ++p, ++digits)
+            pid = pid * 10 + uint32_t(*p - '0');
+        if (!digits || pid != g_self_pid || *p != '/')
+            return false;
+        ++p;
+    }
+    return !strcmp(p, "maps");
+}
+
 // ---- files this program wrote -------------------------------------------------
 //
 // A dropper writes a file and runs it. The names (not the directories, which a
@@ -402,7 +422,14 @@ void file_touched(const char *path, bool write, bool trunc, const char *how) {
     // Reading a process's memory map: what injection helpers and
     // anti-debugging code walk to see what is loaded where (and whether it
     // was modified).
-    if (!write && !strncmp(path, "/proc/", 6) && ends_with(path, "/maps"))
+    // A program the system runs reading its own map is ordinary
+    // self-inspection, not evasion: the interpreters the system ships read
+    // /proc/self/maps (or /proc/<pid>/maps) at startup (CPython 3.13+ finds
+    // its library there; libffi checks its trampolines there), and a daemon
+    // may not be told apart from them. Another program's map stays a tell,
+    // as does any map read outside a system directory.
+    if (!write && !strncmp(path, "/proc/", 6) && ends_with(path, "/maps") &&
+        !(own_maps(path) && system_dir(exe_path())))
         found(lcproto::kAntiAnalysis, how, " opens \"", path,
               "\": reads a process's memory map, which injection helpers and "
               "anti-debugging code walk to find what is loaded where");
