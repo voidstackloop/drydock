@@ -26,6 +26,13 @@ namespace fs = std::filesystem;
 
 namespace {
 
+// std::filesystem::u8path is deprecated in C++20 (and removed in C++26):
+// build the path from a UTF-8 sequence instead, so -Werror stays clean on
+// newer GCC/Clang (Ubuntu 26, macOS) without changing behaviour.
+inline fs::path utf8_to_path(const std::string &s) {
+    return fs::path(reinterpret_cast<const char8_t *>(s.c_str()));
+}
+
 const std::set<std::string> kSourceExts = {".c",   ".cc",  ".cpp", ".cxx",
                                            ".c++", ".h",   ".hh",  ".hpp",
                                            ".hxx", ".inl", ".ipp"};
@@ -64,7 +71,7 @@ bool read_file(const std::string &path, std::string *out) {
         if (open_path.find('/', 1) != std::string::npos) {
             std::string candidate = "/" + open_path;
             std::error_code ec;
-            if (fs::exists(fs::u8path(candidate), ec)) {
+            if (fs::exists(utf8_to_path(candidate), ec)) {
                 open_path = candidate;
             }
         }
@@ -76,7 +83,7 @@ bool read_file(const std::string &path, std::string *out) {
     // with exit 0. Retry briefly; a file that stays unreadable still
     // reports "cannot read" instead of failing the open once and moving on.
     for (int attempt = 0;; ++attempt) {
-        std::ifstream in(fs::u8path(open_path), std::ios::binary);
+        std::ifstream in(utf8_to_path(open_path), std::ios::binary);
         if (in) {
             std::ostringstream ss;
             ss << in.rdbuf();
@@ -471,7 +478,7 @@ bool changed_only(const Command &command, std::vector<std::string> *files,
         if (!match) {
             for (const std::string &ch : changed) {
                 std::error_code eq_ec;
-                if (fs::equivalent(fs::u8path(file), fs::u8path(ch), eq_ec)) {
+                if (fs::equivalent(utf8_to_path(file), utf8_to_path(ch), eq_ec)) {
                     match = true;
                     break;
                 }

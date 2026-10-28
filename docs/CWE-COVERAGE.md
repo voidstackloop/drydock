@@ -59,6 +59,7 @@ means there is no rule for it.
 * [CWE-680](https://cwe.mitre.org/data/definitions/680.html): Integer Overflow to Buffer Allocation (`kAllocSizeOverflow`)
 * [CWE-732](https://cwe.mitre.org/data/definitions/732.html): Incorrect Permission Assignment for Critical Resource (`kBadPermissions`)
 * [CWE-770](https://cwe.mitre.org/data/definitions/770.html): Allocation of Resources Without Limits (Alloca) (`kUnboundedAlloca`)
+* [CWE-825](https://cwe.mitre.org/data/definitions/825.html): Use of a Moved-From Object (`kUseAfterMove`)
 * [CWE-1327](https://cwe.mitre.org/data/definitions/1327.html): Binding Network Service to Unrestricted IP Address (`kInsecureBindAll`)
 * [CWE-1341](https://cwe.mitre.org/data/definitions/1341.html): Multiple Releases of Same Resource (Double Close) (`kDoubleClose`)
 

@@ -29,6 +29,13 @@ namespace fs = std::filesystem;
 
 namespace {
 
+// std::filesystem::u8path is deprecated in C++20 (and removed in C++26):
+// build the path from a UTF-8 sequence instead, so -Werror stays clean on
+// newer GCC/Clang (Ubuntu 26, macOS) without changing behaviour.
+inline fs::path utf8_to_path(const std::string &s) {
+    return fs::path(reinterpret_cast<const char8_t *>(s.c_str()));
+}
+
 constexpr uintmax_t kMaxFile = 256u << 20; // bigger files are skipped
 constexpr size_t kReadMax = 16u << 20;     // the first bytes of a file are read
 
@@ -68,13 +75,13 @@ bool read_prefix(const std::string &path, size_t cap, std::string *out, size_t k
         if (open_path.find('/', 1) != std::string::npos) {
             std::string candidate = "/" + open_path;
             std::error_code ec;
-            if (fs::exists(fs::u8path(candidate), ec)) {
+            if (fs::exists(utf8_to_path(candidate), ec)) {
                 open_path = candidate;
             }
         }
     }
 #endif
-    std::ifstream in(fs::u8path(open_path), std::ios::binary);
+    std::ifstream in(utf8_to_path(open_path), std::ios::binary);
     if (!in)
         return false;
     out->resize(std::min(cap, known));
@@ -341,14 +348,14 @@ void scan_one(const std::string &file, bool malware, const AiRun &ai, const std:
         if (open_path.find('/', 1) != std::string::npos) {
             std::string candidate = "/" + open_path;
             std::error_code ec;
-            if (fs::exists(fs::u8path(candidate), ec)) {
+            if (fs::exists(utf8_to_path(candidate), ec)) {
                 open_path = candidate;
             }
         }
     }
 #endif
     std::error_code ec;
-    const uintmax_t size = fs::file_size(fs::u8path(open_path), ec);
+    const uintmax_t size = fs::file_size(utf8_to_path(open_path), ec);
     if (ec) {
         out->notes.push_back("cannot read " + file);
         return;
