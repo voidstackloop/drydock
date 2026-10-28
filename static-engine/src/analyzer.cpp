@@ -2939,8 +2939,10 @@ class Analyzer {
             if (b < e && t[b].is("&"))
                 ++b;
         }
+        if (b >= e)
+            return {}; // no argument: not a name at all
         size_t pe;
-        std::string p = b < e ? path_at(t, b, &pe) : std::string();
+        const std::string p = path_at(t, b, &pe);
         return pe == e ? p : std::string();
     }
 
