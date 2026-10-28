@@ -113,3 +113,18 @@ void try_catch() {
     }
     delete p;
 }
+
+void use_after_move() {
+    std::string s = "hello";
+    std::string t = std::move(s);
+    if (s.empty()) { // expect: use-after-move
+    }
+}
+
+void move_then_reassign_ok() {
+    std::string s = "hello";
+    std::string t = std::move(s);
+    s = "world";
+    if (s.empty()) {
+    }
+}

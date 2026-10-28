@@ -88,6 +88,11 @@ Print the effective settings after the config file and the flags, and exit.
 Print every rule with its CWE, severity and whether it is on by default; with
 \\fB\\-f json\\fR, for inventory tools.
 .TP
+.B \\-\\-list
+Print what the target expands to and exit without analysing or running
+anything: one collected file per line for static, scan and ai-features, or the
+program and its arguments for dynamic. Always plain text.
+.TP
 .BR \\-\\-enable\\-rule " " \\fIid\\fR
 Enable one rule, including one strict-only rule, without enabling all strict
 checks. Repeatable. A command-line setting overrides the config file.
@@ -129,7 +134,7 @@ classifier it would use.
 Print the full option list, including the dynamic-mode options
 (\\fB\\-\\-guard\\-every\\fR, \\fB\\-\\-quarantine\\-mb\\fR, \\fB\\-\\-stack\\-depth\\fR,
 \\fB\\-\\-fast\\-unwind\\fR, \\fB\\-\\-abort\\-on\\-error\\fR, \\fB\\-\\-trace\\-children\\fR,
-\\fB\\-\\-show\\-reachable\\fR, \\fB\\-\\-no\\-leak\\-check\\fR).
+\\fB\\-\\-show\\-reachable\\fR, \\fB\\-\\-no\\-leak\\-check\\fR, \\fB\\-\\-timeout\\fR).
 .SH EXIT STATUS
 .TP
 .B 0

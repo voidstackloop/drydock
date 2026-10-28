@@ -32,8 +32,10 @@ and the result is compared with a threshold.
 | normal programs, modern | 4,171 DLLs, executables, .NET assemblies, drivers and vendor runtime DLLs from a Windows 11 installation (4,001 judged) |
 | malicious programs | 3,327 32-bit executables (3,254 judged; 73 are payload images with no code) |
 | after dropping rows with identical numbers | 10,413 samples: 3,211 malicious, 7,202 normal |
-| source | [crovax/CNN_Project](https://huggingface.co/datasets/crovax/CNN_Project) on Hugging Face for both old corpora; the modern programs come from the machine that trained the model |
-| fetched by | `tools/fetch_dataset.py` (HTTP range requests, size and CRC checked) and `tools/fetch_benign.py` (a deterministic sample of the local Windows folder, with a SHA-256 manifest) |
+| normal programs, modern refresh (prepared, not in the shipped model) | 5,100 files (4,869 judged): the previous set resampled with 32-bit .NET assemblies and executables, WinSxS side-by-side DLLs, and `.scr`/`.cpl`/`.ocx` programs added |
+| malicious programs, recent (prepared, not in the shipped model) | 770 files (765 judged) from MalwareBazaar hourly batches, October 2026: recent droppers, packed binaries and 64-bit samples, 18% 64-bit where the old corpus has none |
+| source | [crovax/CNN_Project](https://huggingface.co/datasets/crovax/CNN_Project) on Hugging Face for both old corpora; the modern programs come from the machine that trained the model; the recent malware from abuse.ch's public bulk feed |
+| fetched by | `tools/fetch_dataset.py` (HTTP range requests, size and CRC checked), `tools/fetch_benign.py` (a deterministic sample of the local Windows folder, with a SHA-256 manifest) and `tools/fetch_bazaar.py` (recent MalwareBazaar batches, password-decrypted, MZ-checked, with a manifest) |
 
 Nothing is executed: the files are read as bytes. The malicious samples are live
 malware, and the normal modern ones are Microsoft's, so `data/` is in
@@ -57,6 +59,15 @@ a real machine. The modern half of the normal data is what closed that gap:
 | 451 of 451 | `System32\drivers\*.sys` | kernel drivers, which are judged again |
 | 398 of ~10k | `System32\DriverStore\FileRepository\**\*.sys` | third-party drivers |
 | 356 of ~10k | the same folder's `*.dll` | vendor runtimes: graphics, audio, protected media |
+
+The prepared refresh (same machine, resampled October 2026; not in the shipped
+model yet) keeps the caps and adds three sources aimed at the remaining
+32-bit gap: 629 `System32` programs (now including `.scr`/`.cpl`), 324
+`SysWOW64` programs and 697 DLLs (likewise), 250 + 31 32-bit .NET assemblies
+and executables, and 499 WinSxS side-by-side DLLs (`x86_*`, `wow64_*`,
+`msil_*`, flat patterns — a recursive walk is minutes on a slow mount).
+5,100 files, manifest beside the folder. The malware side gains 770 files from
+MalwareBazaar's public hourly batches, 18% 64-bit, likewise manifested.
 
 The DriverStore rows matter most: the code that ships with other vendors'
 hardware is not in `System32`, and it has the shape — large, protected,
@@ -212,6 +223,7 @@ Windows folder is one people will keep installed. The fix for the rest is more
 python3 -m venv .venv-train && .venv-train/bin/pip install numpy lightgbm
 python3 tools/fetch_dataset.py --per-class 3000     # ~3.6 GB under data/samples
 python3 tools/fetch_benign.py --windows /mnt/c/Windows   # the modern normal side
+python3 tools/fetch_bazaar.py --hours 48 --max-files 1500  # the recent malware side
 .venv-train/bin/python tools/train_ai.py            # model/pe-malware.ai + metrics
 ```
 

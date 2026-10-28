@@ -104,6 +104,7 @@ struct Outcome {
     bool started = false;
     std::string error;
     DWORD code = 0;
+    bool timed_out = false;
 };
 
 Outcome launch(const Command &command, const std::string &report) {
@@ -158,7 +159,24 @@ Outcome launch(const Command &command, const std::string &report) {
         return out;
     }
     ResumeThread(pi.hThread);
-    WaitForSingleObject(pi.hProcess, INFINITE);
+    if (command.timeout_sec > 0) {
+        // A hung target must not hang the gate: poll, then kill it.
+        const DWORD budget = DWORD(command.timeout_sec) * 1000;
+        DWORD waited = 0;
+        for (;;) {
+            if (WaitForSingleObject(pi.hProcess, 100) != WAIT_TIMEOUT)
+                break;
+            waited += 100;
+            if (waited >= budget) {
+                TerminateProcess(pi.hProcess, 137);
+                WaitForSingleObject(pi.hProcess, INFINITE);
+                out.timed_out = true;
+                break;
+            }
+        }
+    } else {
+        WaitForSingleObject(pi.hProcess, INFINITE);
+    }
     GetExitCodeProcess(pi.hProcess, &out.code);
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
@@ -202,6 +220,9 @@ int run_dynamic_analysis(const Command &command) {
     report.command.insert(report.command.end(), command.target_args.begin(), command.target_args.end());
     report.ran = true;
     report.exit_code = int(run.code);
+    if (run.timed_out)
+        report.notes.push_back("timed out after " + std::to_string(command.timeout_sec) +
+                               "s; killed");
 
     lcreport::parse_runtime_stream(report_path, report);
     DeleteFileA(report_path.c_str());

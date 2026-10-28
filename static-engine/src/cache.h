@@ -25,7 +25,7 @@ struct CachedFile
 
 // Bump when the analysis output changes shape or meaning: every old entry is
 // then a miss, never a stale finding.
-inline constexpr uint32_t kCacheParserVersion = 1;
+inline constexpr uint32_t kCacheParserVersion = 2; // v2: use-after-move rule added
 
 // FNV-1a of the path and contents, so a copy at another path is its own entry.
 uint64_t cache_key(const std::string &absolute_path, const std::string &content,

@@ -43,11 +43,11 @@ Not fetched (run `tools/fetch_corpus.py`): zlib, lua, libpng, libjpeg-turbo, cJS
 | `signal-unsafe-call` | 21 | 0 | 0 | 0 | — | not triaged |
 | `weak-crypto` | 20 | 0 | 0 | 0 | — | not triaged |
 | `hardcoded-secret` | 19 | 0 | 0 | 0 | — | not triaged |
-| `double-free` | 13 | 0 | 0 | 0 | — | not triaged |
+| `double-free` | 13 | 13 | 2 | 11 | 84.6% | sample too small |
 | `sizeof-pointer` | 12 | 12 | 1 | 11 | 91.7% | sample too small |
 | `unsafe-function` | 12 | 12 | 6 | 6 | 50.0% | sample too small |
 | `credential-access` | 11 | 11 | 0 | 11 | 100.0% | sample too small |
-| `invalid-free` | 11 | 0 | 0 | 0 | — | not triaged |
+| `invalid-free` | 11 | 11 | 0 | 11 | 100.0% | sample too small |
 | `system-tampering` | 11 | 11 | 0 | 11 | 100.0% | sample too small |
 | `unchecked-stream` | 11 | 11 | 11 | 0 | 0.0% | sample too small |
 | `privilege-escalation` | 8 | 8 | 0 | 8 | 100.0% | sample too small |
@@ -68,9 +68,9 @@ Not fetched (run `tools/fetch_corpus.py`): zlib, lua, libpng, libjpeg-turbo, cJS
 
 ## Whole tool
 
-* 998 labelled finding(s): 24 true, 974 false
-* False-alarm rate on the labelled findings: **97.6%**
-* Untriaged findings: **378** of 1376 (the rate above does not speak for them)
+* 1022 labelled finding(s): 26 true, 996 false
+* False-alarm rate on the labelled findings: **97.5%**
+* Untriaged findings: **354** of 1376 (the rate above does not speak for them)
 
 ## How the corpus is run
 

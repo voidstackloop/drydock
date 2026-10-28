@@ -119,11 +119,16 @@ What is watched is the same heap, descriptor, stream, directory, socket, `execve
 `fork`/`wait` and behaviour-rule machinery as Linux, built from the same files
 (`dynamic-engine/src/preload/*.cpp`) with the handful of `#if defined(__APPLE__)` sections that a
 real difference needs — not a separate runtime the way Windows has one. Specifically absent:
-**ptrace injection and `PTRACE_TRACEME`** (no `ptrace(2)` request numbers in the same shape as
-Linux's), **`/proc`** (reading another process's memory map, `/proc/<pid>/mem`), **`memfd_create`**
+**some `ptrace` requests** (Darwin numbers are mapped where they coincide:
+`PT_TRACE_ME`, attach/detach and the read/write peeks are detected, but there
+is no `SEIZE`, `GETREGSET`/`SETREGSET`, or `POKEUSER`-shaped write, and no
+`process_vm_readv`/`process_vm_writev`), **`/proc`** (reading another process's
+memory map, `/proc/<pid>/mem`), **`memfd_create`**
 (fileless-exec is not detected on macOS), and the glibc-specific mutex-owner field that
-`destroy-locked`/`foreign-unlock` read (macOS's `libpthread` has no public equivalent, so a thread
-ending with a lock held, or unlocking one it does not own, is not caught there either). A binary
+`orphaned-lock`/`foreign-unlock`/`destroy-locked`/`use-after-destroy` read
+(macOS's `libpthread` has no public equivalent, so a lock orphaned by fork or
+by a thread that ended, a foreign unlock, destroying a held lock, or using a
+destroyed one is not caught there either). A binary
 signed with the hardened runtime and no `com.apple.security.cs.allow-dyld-environment-variables`
 entitlement ignores `DYLD_INSERT_LIBRARIES` entirely (Apple's own protection against exactly this
 technique); `leakcheck dynamic` on such a program runs it untraced, the same as a statically linked
@@ -144,14 +149,14 @@ A process named `launchd`, `WindowServer`, `coreaudiod` and the other names in `
 not under `/System` or `/usr` is `masquerade`, matched without regard to case (`windowserver` counts
 too).
 
-**None of the `__APPLE__` code in this project has been run on an actual Mac**: it was written from
-Apple's documented APIs and verified the same way as everything else here — unit tests of the
-platform-independent logic (the rule tables, `name_checks`, `system_dir`/`hiding_place`), and, where
-a Linux host can exercise the same code path (the `--malware` family tables, which are plain string
-matching with no OS calls), a live `leakcheck dynamic`/`leakcheck scan` run. The dylib build, the
-`__interpose` section, and the platform-specific code paths above (ptrace absence aside, which is
-simply never compiled in) are unverified past compiling, which this project's own CI cannot do
-either without a Mac runner.
+**None of the `__APPLE__` code in this project has been run on an actual Mac by its authors**: it was written from
+Apple's documented APIs and verified from Linux — unit tests of the
+platform-independent logic (the rule tables, `name_checks`, `system_dir`/`hiding_place`), full
+Linux runs of every ported test program, and preprocessor plus syntax checks of
+the Apple branches. The dylib build, the `__interpose` section, and the
+Darwin-only paths are exercised for the first time by the macOS CI job
+(`macos-15` runner): a failure there is real signal about Darwin behavior,
+not a reason to distrust the gate.
 
 ## Build
 
@@ -243,12 +248,25 @@ Example:
 | `--no-config` | Ignore `leakcheck.toml` and `.leakcheckignore` |
 | `--print-config` | Print the effective settings (file, then flags) and exit, so a failing gate can be explained in one command |
 | `--rule-list` | Print every rule with its CWE, summary, default severity and whether a default run reports it (`-f json` for an array) |
+| `--list` | Print what the target expands to and exit 0 without analysing or running anything: one collected file per line for `static`/`scan`/`ai-features` (after `--exclude`, ignore files and `static`'s `--changed-only`), or the program and its arguments for `dynamic`. Always plain text, even with `-f` |
 | `--enable-rule <id>` | Enable one rule, including a strict-only rule, without enabling every strict check; repeatable |
 | `--disable-rule <id>` | Remove one rule from every report format and the exit-status calculation; repeatable |
 | `--diff-base <ref>` | `static`: only report findings on lines changed relative to git `<ref>` |
 | `--changed-only <ref>` | `static`: only files that differ from git `<ref>` |
 | `--metrics`, `--stats` | Append codebase security metrics, issue density, and technical debt score to the report |
 | `--no-cache` | `static`: do not read or write the incremental cache |
+| `--custom-rules <file>` | `static`: extra substring rules, one per line as `id | pattern | message [| severity]` (`#` comments and blank lines ignored). Each match becomes a `custom/<id>` finding. Rule ids are `[a-z0-9-_]`, severity defaults to `warning`. At most 20 hits per rule per file |
+| `--gen-fuzz <dir>` | `static`: write one libFuzzer stub harness per taint-sink finding (`<dir>/fuzz_<type>_<file>_<line>.cpp`). Stubs compile under `-fsanitize=fuzzer`; wire the sink call where the TODO says |
+| `--vcxproj <file>` | `static`: write a minimal VS project listing the scanned sources and headers, so the report opens in Visual Studio (a file list, not a build) |
+| `--fix-commit <file>` | `static`: save the `-f patch` auto-fixes to a file and `git apply --check` it, ready for the developer's own `git commit`. Nothing is staged or committed |
+| `--profile <name>` | Rule preset: `misra` (every strict rule on, notes fail the gate) or `balanced` (the default) |
+| `--prove` | `scan`: a malware family named from a single sign is demoted to a warning; families with a second corroborating finding in the same file keep their severity |
+| `--audit-deps` | `scan`: flag unpinned dependencies (conan ranges/stars, vcpkg entries without `version>=`, `FetchContent` without a version `GIT_TAG`, plain-`http://` downloads) as `unpinned-dependency` |
+| `--backend <name>` | `dynamic`: `preload` (the shipped tracer) or `ebpf` (reserved for the kernel tracer; currently exits 3 with a clear error) |
+| `--record <file>` | `dynamic`: keep the raw event stream (the flight recorder) in `<file>` for forensics, in addition to the rendered report |
+| `--db <file>` | `trend`: local CSV database (default `leakcheck-trend.csv`) |
+| `lsp` mode | Language server over stdio (JSON-RPC with `Content-Length` framing): `initialize`, `textDocument/didOpen`/`didChange` (full text), `didClose`. Publishes the static analyzer's issues as diagnostics; same checks as `static`, no new threads, no network |
+| `trend <report.json>` | Append one row (timestamp, report, findings, errors, warnings) to the CSV db and print its tail. Local file only; the JSON report's `findings`/`severity` fields are counted, nothing is uploaded |
 | `--malware` | Also look for the malware families of `shared/include/malware.h` (virus, worm, trojan, ransomware, spyware, rootkit, RAT, botnet, ... see "Malware families" below). Works in `scan`, `static` and `dynamic` mode; much slower than the default checks, so it is opt-in |
 | `--ai` | `scan` only: also ask the trained classifier about every Windows program read (see "The classifier" below). Needs `model/pe-malware.ai`; about twice as slow on a folder of PE files, no cost on other files |
 | `--ai-model <file>` | The model to use instead of `model/pe-malware.ai` |
@@ -263,6 +281,7 @@ Example:
 | `--fast-unwind` | Walk frame pointers instead of DWARF unwind tables: about 4x faster on allocation-heavy programs; frames compiled without `-fno-omit-frame-pointer` are left out of the stacks |
 | `--abort-on-error` | Stop the program at the first memory error |
 | `--trace-children` | Also check processes the program forks or executes |
+| `--timeout <s>` | `dynamic`: kill the program after N seconds (1-86400, default: no limit) and note it; a run with no findings returns `128 + signal` as usual |
 
 ### Exit status
 
@@ -326,6 +345,17 @@ comment. A later pattern starting with `!` re-includes matching files, so
 `vendor/**` followed by `!vendor/ours/**` scans the maintained subtree. Excluded
 files are counted in the report's notes, so a gate that hides too much says so.
 Use `\!important.c` or `\#generated.c` to match a literal leading `!` or `#`.
+
+### Reachability and ownership
+
+Static findings whose sink is fed by outside text (a taint flow is attached) carry
+`reachable: true` in JSON and `[reachable from outside input]` in console output,
+plus a `N finding(s) reachable from outside input ... fix these first` note.
+A leak whose variable is handed to a releasing function in *another* function
+(init/fini lifecycles, globals) is treated as an ownership transfer rather than a
+leak, but only when the callee is defined in the scanned tree and releases memory,
+and the variable is never used again afterwards. Same-function releases are left
+to the path-sensitive analyzer, which already sees every path.
 
 ### Suppressions
 

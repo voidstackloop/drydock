@@ -15,7 +15,22 @@ static pthread_mutex_t b = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t c = PTHREAD_MUTEX_INITIALIZER;
 static pthread_rwlock_t rw = PTHREAD_RWLOCK_INITIALIZER;
 static pthread_rwlock_t rw2 = PTHREAD_RWLOCK_INITIALIZER;
+#if defined(__APPLE__)
+// Darwin removed spin locks: a mutex stands in so the same orderings run.
+// Spin-specific findings stay Linux-only; those tests remain skipped there.
+typedef pthread_mutex_t pthread_spinlock_t;
 static pthread_spinlock_t spin;
+static int pthread_spin_init(pthread_spinlock_t *l, int p) {
+    (void)p;
+    return pthread_mutex_init(l, NULL);
+}
+static int pthread_spin_lock(pthread_spinlock_t *l) { return pthread_mutex_lock(l); }
+static int pthread_spin_trylock(pthread_spinlock_t *l) { return pthread_mutex_trylock(l); }
+static int pthread_spin_unlock(pthread_spinlock_t *l) { return pthread_mutex_unlock(l); }
+static int pthread_spin_destroy(pthread_spinlock_t *l) { return pthread_mutex_destroy(l); }
+#else
+static pthread_spinlock_t spin;
+#endif
 
 static void *a_then_b(void *arg) {
     pthread_mutex_lock(&a);
@@ -167,6 +182,7 @@ static int clean(void) {
     pthread_mutex_unlock(&c);
     pthread_rwlock_unlock(&rw);
     // A spin lock in one consistent order, and a try in the other.
+    // (On Darwin `spin` is a mutex stand-in: same ordering, no finding.)
     pthread_spin_init(&spin, PTHREAD_PROCESS_PRIVATE);
     pthread_spin_lock(&spin);
     pthread_mutex_lock(&c);

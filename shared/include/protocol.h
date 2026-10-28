@@ -43,6 +43,7 @@ inline constexpr const char *kLeak = "memory-leak";
 inline constexpr const char *kResourceLeak = "resource-leak";
 inline constexpr const char *kDoubleClose = "double-close";
 inline constexpr const char *kUseAfterClose = "use-after-close";
+inline constexpr const char *kUseAfterMove = "use-after-move";
 inline constexpr const char *kLockOrder = "lock-order-inversion";
 inline constexpr const char *kDoubleLock = "double-lock";
 inline constexpr const char *kLockLeak = "lock-leak";

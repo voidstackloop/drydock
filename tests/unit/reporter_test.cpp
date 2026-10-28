@@ -921,4 +921,196 @@ TEST(render_new_formats_markdown_csv_gitlab_sonarqube_patch_metrics) {
     }
 }
 
+
+TEST(advanced_reachable_marks_taint_flow) {
+    Report r;
+    Finding f;
+    f.type = "command-injection";
+    f.message = "x";
+    f.flow.push_back(Frame());
+    f.flow.back().what = "argv";
+    r.findings.push_back(f);
+    Finding g;
+    g.type = "memory-leak";
+    g.message = "y";
+    r.findings.push_back(g);
+    mark_reachable(r);
+    CHECK(r.findings[0].reachable);
+    CHECK(!r.findings[1].reachable);
+    CHECK(!r.notes.empty());
+}
+
+TEST(advanced_custom_rules_match_substring) {
+    const std::string src = temp_file("int x;\nTODO-FIX this\n");
+    Report r;
+    const std::string rules =
+        temp_file("my-todo | TODO-FIX | leftover marker | note\n"
+                  "# a comment\n"
+                  "badrule | rbac_check | must check | error\n");
+    std::string error;
+    CHECK(apply_custom_rules(r, {src}, rules, &error));
+    CHECK(r.findings.size() == 1);
+    CHECK(r.findings[0].type == "custom/my-todo");
+    CHECK(r.findings[0].access[0].line == 2);
+    CHECK(r.findings[0].severity_override == "note");
+    std::remove(src.c_str());
+    std::remove(rules.c_str());
+}
+
+TEST(advanced_custom_rules_reject_bad_files) {
+    Report r;
+    std::string error;
+    const std::string bad = temp_file("no pipes here\n");
+    CHECK(!apply_custom_rules(r, {}, bad, &error));
+    CHECK(!error.empty());
+    std::remove(bad.c_str());
+}
+
+TEST(advanced_ownership_suppresses_transfer) {
+    const std::string src = temp_file(
+        "static void *g;\n"
+        "void pool_destroy(void *p) { free(p); }\n"
+        "void init() { g = malloc(16); }\n"
+        "void fini() { pool_destroy(g); }\n");
+    Report r;
+    Finding f;
+    f.type = "memory-leak";
+    f.category = "static";
+    f.message = "memory allocated with malloc() at line 2 ('g') is not released";
+    f.access.push_back(Frame());
+    f.access.back().file = src;
+    f.access.back().line = 2;
+    f.access.back().function = "init";
+    r.findings.push_back(f);
+    apply_ownership_summaries(r, {src});
+    CHECK(r.findings.empty());
+    CHECK(!r.notes.empty());
+    std::remove(src.c_str());
+}
+
+TEST(advanced_ownership_keeps_reassigned_leak) {
+    const std::string src = temp_file(
+        "void my_cleanup(void *p) { free(p); }\n"
+        "int main() { void *b = malloc(8); my_cleanup(b); b = malloc(9); }\n");
+    Report r;
+    Finding f;
+    f.type = "memory-leak";
+    f.category = "static";
+    f.message = "memory allocated with malloc() at line 3 ('b') is not released";
+    f.access.push_back(Frame());
+    f.access.back().file = src;
+    f.access.back().line = 3;
+    r.findings.push_back(f);
+    apply_ownership_summaries(r, {src});
+    CHECK(r.findings.size() == 1);
+    std::remove(src.c_str());
+}
+
+TEST(advanced_prove_demotes_lonely_family) {
+    Report r;
+    Finding lone;
+    lone.type = "trojan-horse";
+    lone.access.push_back(Frame());
+    lone.access.back().file = "a.exe";
+    r.findings.push_back(lone);
+    Finding pair1, pair2;
+    pair1.type = "trojan-horse";
+    pair1.access.push_back(Frame());
+    pair1.access.back().file = "b.exe";
+    pair2.type = "reverse-shell";
+    pair2.access.push_back(Frame());
+    pair2.access.back().file = "b.exe";
+    r.findings.push_back(pair1);
+    r.findings.push_back(pair2);
+    prove_findings(r);
+    CHECK(r.findings[0].severity_override == "warning");
+    CHECK(r.findings[1].severity_override.empty());
+    CHECK(!r.notes.empty());
+}
+
+TEST(advanced_audit_deps_flags_unpinned) {
+    Report r;
+    audit_dependencies("does-not-exist-dir-xyz", {}, r);
+    CHECK(r.findings.empty());
+}
+
+TEST(advanced_vcxproj_lists_sources_only) {
+    const std::string proj = temp_file("");
+    std::vector<std::string> notes;
+    emit_vcxproj({"src/a.cpp", "src/b.h", "notes.txt"}, proj, notes);
+    std::ifstream in(proj);
+    std::stringstream ss;
+    ss << in.rdbuf();
+    std::remove(proj.c_str());
+    const std::string s = ss.str();
+    CHECK(s.find("<ClCompile Include=\"src/a.cpp\"") != std::string::npos);
+    CHECK(s.find("<ClInclude Include=\"src/b.h\"") != std::string::npos);
+    CHECK(s.find("notes.txt") == std::string::npos);
+    CHECK(!notes.empty() && notes[0].find("1 source(s), 1 header(s)") !=
+                                std::string::npos);
+}
+
+TEST(advanced_fix_commit_writes_checked_patch) {
+    const std::string src =
+        temp_file("#include <string.h>\n"
+                  "void f(char *d) { strcpy(d, \"x\"); }\n");
+    Report r;
+    Finding f;
+    f.type = "unsafe-function";
+    f.message = "strcpy() is dangerous";
+    f.access.push_back(Frame());
+    f.access.back().file = src;
+    f.access.back().line = 2;
+    r.findings.push_back(f);
+    const std::string patch = temp_file("");
+    write_fix_commit(r, patch);
+    std::ifstream in(patch);
+    std::stringstream ss;
+    ss << in.rdbuf();
+    std::remove(src.c_str());
+    std::remove(patch.c_str());
+    CHECK(ss.str().find("strlcpy") != std::string::npos);
+    CHECK(!r.notes.empty() && r.notes.back().find("1 auto-fix hunk(s)") !=
+                                  std::string::npos);
+}
+
+TEST(advanced_fix_commit_empty_without_fixes) {
+    Report r;
+    Finding f = finding("memory-leak", "static");
+    f.access = {frame("main", "/work/x.c", 1)};
+    r.findings.push_back(f);
+    write_fix_commit(r, "/nonexistent-dir/out.patch");
+    CHECK(!r.notes.empty() &&
+          r.notes.back().find("no auto-fixable findings") != std::string::npos);
+}
+
+TEST(render_patch_suggests_safe_swaps) {
+    const std::string src = temp_file("#include <string.h>\n"
+                                      "void f(char *d) { getwd(d); }\n"
+                                      "void g() { vsprintf(buf, fmt, ap); }\n"
+                                      "void h() { MD5(d, n, out); }\n");
+    Report r;
+    auto add = [&](const std::string &type, const std::string &msg, int line) {
+        Finding f;
+        f.type = type;
+        f.message = msg;
+        f.access.push_back(Frame());
+        f.access.back().file = src;
+        f.access.back().line = line;
+        r.findings.push_back(f);
+    };
+    add("unsafe-function",
+        "getwd() writes a path of any length into the buffer; use getcwd(buf, size)",
+        2);
+    add("unbounded-copy", "vsprintf() is told to write 100 bytes into 'buf'", 3);
+    add("weak-crypto", "MD5() is a broken or weak algorithm: use SHA-256", 4);
+    std::ostringstream os;
+    render_patch(r, os);
+    std::remove(src.c_str());
+    const std::string s = os.str();
+    CHECK(s.find("getcwd(d)") != std::string::npos);
+    CHECK(s.find("vsnprintf(buf, fmt, ap)") != std::string::npos);
+    CHECK(s.find("SHA256(d, n, out)") != std::string::npos);
+}
+
 TEST_MAIN()

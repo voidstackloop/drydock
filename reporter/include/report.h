@@ -29,6 +29,7 @@ struct Finding {
     std::string type;     // e.g. "double-free", "memory-leak", "static-leak"
     std::string category; // leaks: definite | indirect | possible | reachable
     std::string message;
+    bool reachable = false;
     std::string key; // stable identity for dedupe and SARIF fingerprints
     std::string severity_override; // optional configured severity override
     uint64_t address = 0;
@@ -145,6 +146,22 @@ void apply_default_suppressions(Report &r);
 // disguise plus harm is a trojan horse; a remote shell plus spying is a RAT; ...)
 // and the families that are another's other name (a file infector is a virus).
 void add_composite_findings(Report &r);
+void mark_reachable(Report &r);
+bool apply_custom_rules(Report &r, const std::vector<std::string> &files,
+                         const std::string &rules_path, std::string *error);
+void apply_ownership_summaries(Report &r,
+                                const std::vector<std::string> &files);
+void gen_fuzz_harnesses(const Report &r, const std::string &dir,
+                        std::vector<std::string> &notes);
+void emit_vcxproj(const std::vector<std::string> &files, const std::string &path,
+                  std::vector<std::string> &notes);
+void write_fix_commit(Report &r, const std::string &path);
+void audit_dependencies(const std::string &target, const std::vector<ExcludeRule> &excludes,
+                        Report &r);
+void prove_findings(Report &r);
+int run_lsp(const Command &command);
+int run_trend(const Command &command);
+
 
 void render_console(const Report &r, std::ostream &os);
 void render_json(const Report &r, std::ostream &os);

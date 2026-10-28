@@ -83,17 +83,28 @@ build that skips the interposed allocator before it can join.
 - The MinGW script was missing the classifier's two source files (a link error),
   and the macOS build was missing platform guards. Both are fixed.
 
-Every platform gates a merge today: Linux and macOS through ctest, Windows
-through build-windows.ps1 -Test. Phase 5 closed the
+Every platform gates a merge today: Linux and macOS through ctest (which runs
+the cli, dynamic, static and scan suites), Windows through
+build-windows.ps1 -Test. Phase 5 closed the
 matrix for reports (the determinism job compares JSON and SARIF from Linux,
-Windows and macOS); the runtime still gates on Windows and Linux only.
+Windows and macOS); the dynamic suite gates on macOS too. All test programs
+build there now (see the CMake APPLE list); run_tests.py skips only the cases
+whose API does not exist on Darwin (spin locks, memfd, fexecve/execveat,
+prctl/personality, Linux-only syscalls, non-PIE binaries) or whose runtime
+check reads glibc internals (mutex owner word). Not tested on a real Mac:
+everything Darwin-specific was written from Apple's documented APIs and
+verified by Linux builds plus preprocessor and syntax checks of the Apple
+branches — the first green run happens in macOS CI, and any failure there is
+real signal about Darwin behavior, not a reason to revert the gate.
 
 ## Phase 0 — Make it installable and identifiable — **done**
 
 - `--version`: semantic version, git hash, build type, and the model version.
 - Tag `v1.0.0`; a release workflow that builds Linux x86_64/aarch64 (glibc; musl
-  deferred) and Windows x64, with SHA-256 sums and SLSA build provenance.
-  macOS archives wait on the runtime. No binaries from a laptop.
+  deferred), Windows x64 and macOS universal (arm64 + x86_64, dylib beside the
+  binary), with SHA-256 sums and SLSA build provenance.
+  No binaries from a laptop. (The macOS archive is built but, like the
+  test suite, not yet exercised on a real Mac.)
 - `cmake --install` rules, a man page (`docs/leakcheck.1`), and a `CHANGELOG.md`
   that states what changed per finding type.
 - A build-and-test workflow: three platforms, `ctest`, `tests/run_tests.py`,

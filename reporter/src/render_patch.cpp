@@ -24,6 +24,10 @@ FixReplacement suggest_fix(const Finding &f) {
             return {"strcat", "strlcat"};
         if (f.message.find("sprintf(") != std::string::npos)
             return {"sprintf", "snprintf"};
+        if (f.message.find("vsprintf(") != std::string::npos)
+            return {"vsprintf", "vsnprintf"};
+        if (f.message.find("getwd(") != std::string::npos)
+            return {"getwd", "getcwd"};
         if (f.message.find("gets(") != std::string::npos)
             return {"gets", "fgets"};
     }
@@ -35,11 +39,41 @@ FixReplacement suggest_fix(const Finding &f) {
         if (f.message.find("mktemp(") != std::string::npos)
             return {"mktemp", "mkstemp"};
     }
+    if (f.type == "unpinned-dependency") {
+        return {};
+    }
     if (f.type == "uncleared-sensitive-data") {
         return {"memset", "explicit_bzero"};
     }
+    if (f.type == "insecure-permissions") {
+        if (f.message.find("0777") != std::string::npos)
+            return {"0777", "0755"};
+        if (f.message.find("0666") != std::string::npos)
+            return {"0666", "0644"};
+    }
+    if (f.message.find("rand()") != std::string::npos)
+        return {"rand", "arc4random"};
+    if (f.message.find("memcpy(") != std::string::npos)
+        return {"memcpy", "memcpy_s"};
+    if (f.message.find("chmod(") != std::string::npos &&
+        f.message.find("0777") != std::string::npos)
+        return {"0777", "0755"};
     if (f.type == "timing-attack") {
         return {"memcmp", "CRYPTO_memcmp"};
+    }
+    if (f.type == "weak-crypto") {
+        // One broken hash for another call with the same signature:
+        // SHA-256 drops into MD5/SHA-1 call sites unchanged.
+        static const std::pair<const char *, const char *> kRehash[] = {
+            {"MD5_Init", "SHA256_Init"},     {"MD5_Update", "SHA256_Update"},
+            {"MD5_Final", "SHA256_Final"},   {"SHA1_Init", "SHA256_Init"},
+            {"SHA1_Update", "SHA256_Update"}, {"SHA1_Final", "SHA256_Final"},
+            {"EVP_md5", "EVP_sha256"},       {"EVP_sha1", "EVP_sha256"},
+            {"CC_MD5", "CC_SHA256"},         {"CC_SHA1", "CC_SHA256"},
+            {"MD5", "SHA256"},               {"SHA1", "SHA256"}};
+        for (const auto &[weak, strong] : kRehash)
+            if (f.message.find(std::string(weak) + "(") != std::string::npos)
+                return {weak, strong};
     }
     return {};
 }

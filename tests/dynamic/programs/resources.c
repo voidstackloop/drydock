@@ -142,19 +142,21 @@ static void leak_mkstemp(void) {
 
 static void leak_fcntl_dup(void) { fcntl(1, F_DUPFD, 10); }
 
-static pid_t g_tid;
+static volatile int g_thread_done;
 
 static void *record_tid(void *arg) {
-    g_tid = (pid_t)syscall(SYS_gettid);
+    g_thread_done = 1;
     return arg;
 }
 
 static void leak_thread(void) {
     pthread_t t;
     pthread_create(&t, NULL, record_tid, NULL);
-    // Wait until the thread is completely gone, but never join it.
-    while (!g_tid || syscall(SYS_tgkill, getpid(), g_tid, 0) == 0)
+    // Wait until the thread has exited, but never join or detach it.
+    while (!g_thread_done)
         usleep(1000);
+    // Give it a moment to finish exiting so the leak is certain.
+    usleep(10000);
 }
 
 // Open while a command runs, without close-on-exec: the command gets a copy.
@@ -196,7 +198,7 @@ static void double_close(void) {
 // The second close uses a number a later open already took, so it shuts the
 // new file. That is a double close of the first lifetime.
 static void fd_reuse_close(void) {
-    int config = open("/etc/hostname", O_RDONLY);
+    int config = open("/etc/hosts", O_RDONLY);
     close(config);
     int log = open("/dev/null", O_WRONLY);
     close(config);
@@ -428,7 +430,13 @@ static void stream_ok(void) {
 
 static void fcloseall_use(void) {
     FILE *f = fopen("/dev/null", "r");
+#if defined(__APPLE__)
+    // No fcloseall() on Darwin: closing the stream directly leaves the
+    // same use-after-close for the runtime to report.
+    fclose(f);
+#else
     fcloseall();
+#endif
     char buf[8];
     fread(buf, 1, sizeof buf, f);
 }

@@ -618,6 +618,12 @@ int run_static_analysis(const Command &command) {
         fprintf(stderr, "leakcheck: %s\n", error.c_str());
         return kExitConfig;
     }
+    if (command.list_only) {
+        // --list: the collected targets, one per line, analysed nothing.
+        for (const std::string &file : files)
+            puts(file.c_str());
+        return kExitClean;
+    }
 
     lcreport::Report report;
     report.mode = "static";
@@ -845,6 +851,21 @@ int run_static_analysis(const Command &command) {
         report.notes.push_back("no C or C++ source files found");
     if (command.malware)
         lcreport::add_composite_findings(report);
+    if (!command.custom_rules.empty()) {
+        if (!lcreport::apply_custom_rules(report, files, command.custom_rules,
+                                          &error)) {
+            fprintf(stderr, "leakcheck: %s\n", error.c_str());
+            return kExitConfig;
+        }
+    }
+    lcreport::apply_ownership_summaries(report, files);
+    lcreport::mark_reachable(report);
+    if (!command.gen_fuzz.empty())
+        lcreport::gen_fuzz_harnesses(report, command.gen_fuzz, report.notes);
+    if (!command.vcxproj.empty())
+        lcreport::emit_vcxproj(files, command.vcxproj, report.notes);
+    if (!command.fix_commit.empty())
+        lcreport::write_fix_commit(report, command.fix_commit);
     lcreport::apply_rule_policy(report, command.rule_policy, command.strict);
 
     for (auto &f : report.findings) {

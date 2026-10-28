@@ -4,14 +4,17 @@
 #include "report.h"
 
 #include <cerrno>
+#include <chrono>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
+#include <fstream>
 #include <limits.h>
 #include <string>
 #include <sys/wait.h>
+#include <thread>
 #include <unistd.h>
 #include <vector>
 #if defined(__APPLE__)
@@ -105,6 +108,7 @@ struct Outcome {
     bool started = false;
     int exec_errno = 0;
     int status = 0;
+    bool timed_out = false;
 };
 
 Outcome launch(const Command &command, const std::string &preload,
@@ -156,7 +160,23 @@ Outcome launch(const Command &command, const std::string &preload,
         while ((n = read(errpipe[0], &err, sizeof err)) < 0 && errno == EINTR) {
         }
         close(errpipe[0]);
-        while (waitpid(c_pid, &out.status, 0) < 0 && errno == EINTR) {
+        if (command.timeout_sec > 0) {
+            // A hung target must not hang the gate: poll, then kill it.
+            const auto deadline = std::chrono::steady_clock::now() +
+                                  std::chrono::seconds(command.timeout_sec);
+            pid_t w = 0;
+            while ((w = waitpid(c_pid, &out.status, WNOHANG)) == 0 &&
+                   std::chrono::steady_clock::now() < deadline)
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            if (w == 0) {
+                kill(c_pid, SIGKILL);
+                while (waitpid(c_pid, &out.status, 0) < 0 && errno == EINTR) {
+                }
+                out.timed_out = true;
+            }
+        } else {
+            while (waitpid(c_pid, &out.status, 0) < 0 && errno == EINTR) {
+            }
         }
         if (n == ssize_t(sizeof err))
             out.exec_errno = err;
@@ -171,6 +191,19 @@ Outcome launch(const Command &command, const std::string &preload,
 } // namespace
 
 int run_dynamic_analysis(const Command &command) {
+    // --backend: preload is the shipped tracer. ebpf is reserved for the
+    // kernel tracer (same report format); fail openly until it lands.
+    if (command.backend != "preload") {
+        if (command.backend == "ebpf") {
+            fprintf(stderr,
+                    "leakcheck: --backend ebpf is not available in this build: "
+                    "the eBPF tracer is not implemented yet, use --backend preload\n");
+        } else {
+            fprintf(stderr, "leakcheck: unknown --backend '%s' (preload or ebpf)\n",
+                    command.backend.c_str());
+        }
+        return 3;
+    }
     std::string preload_so = get_preload_path();
     if (preload_so.empty() || access(preload_so.c_str(), R_OK) != 0) {
         fprintf(stderr,
@@ -201,12 +234,30 @@ int run_dynamic_analysis(const Command &command) {
     report.command.insert(report.command.end(), command.target_args.begin(),
                           command.target_args.end());
     report.ran = true;
+    if (run.timed_out)
+        report.notes.push_back("timed out after " + std::to_string(command.timeout_sec) +
+                               "s; killed");
     if (WIFSIGNALED(run.status))
         report.signal = WTERMSIG(run.status);
     else
         report.exit_code = WEXITSTATUS(run.status);
 
     lcreport::parse_runtime_stream(report_path, report);
+    // --record: keep the raw event stream (the flight recorder) for forensics.
+    if (!command.record_path.empty()) {
+        std::ifstream src(report_path, std::ios::binary);
+        std::ofstream dst(command.record_path, std::ios::binary);
+        if (src && dst) {
+            dst << src.rdbuf();
+            report.notes.push_back("raw event stream recorded to " +
+                                   command.record_path);
+        } else {
+            fprintf(stderr, "leakcheck: cannot write --record file '%s'\n",
+                    command.record_path.c_str());
+            unlink(report_path.c_str());
+            return 3;
+        }
+    }
     unlink(report_path.c_str());
     if (report.processes.empty())
         report.notes.push_back(

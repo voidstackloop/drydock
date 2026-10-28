@@ -11,7 +11,9 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#if !defined(__APPLE__)
 #include <sys/sendfile.h>
+#endif
 #include <sys/socket.h>
 #include <sys/syscall.h>
 #include <sys/uio.h>
@@ -46,11 +48,15 @@ int main(int argc, char **argv) {
     if (socketpair(AF_UNIX, type, 0, sv) != 0)
         return 1;
     if (strcmp(c, "sendfile") == 0 || strcmp(c, "sendfile_file") == 0) {
-        int in = open("/etc/hostname", O_RDONLY);
+        int in = open("/etc/hosts", O_RDONLY);
         int out = sv[0];
         if (strcmp(c, "sendfile_file") == 0)
             out = open("/dev/null", O_WRONLY); // not a socket: no SIGPIPE
+#if defined(__APPLE__) // Darwin order: file, socket, offset, length
+        do { off_t len = 32; sendfile(in, out, 0, &len, NULL, 0); } while (0);
+#else
         sendfile(out, in, NULL, 32);
+#endif
         if (out != sv[0])
             close(out);
         close(in);
@@ -99,9 +105,17 @@ int main(int argc, char **argv) {
             close(p[1]);
         } else if (strcmp(c, "write_reopened") == 0) { // a socket's number, reopened unseen
             close(sv[0]);
+#if defined(__APPLE__)
+            // No hidden-syscall path on Darwin: a seen open of a plain file
+            // still writes no SIGPIPE, so the case stays silent.
+            int again = open("/dev/null", O_WRONLY);
+            write(again, w, 5);
+            close(again);
+#else
             int again = (int)syscall(SYS_openat, AT_FDCWD, "/dev/null", O_WRONLY);
             write(again, w, 5);
             syscall(SYS_close, again);
+#endif
             close(sv[1]);
             return 0;
         } else if (strcmp(c, "write_ignored") == 0) {
@@ -119,8 +133,12 @@ int main(int argc, char **argv) {
             getsockname(srv, (struct sockaddr *)&a, &al);
             int cli = socket(AF_INET, SOCK_STREAM, 0);
             connect(cli, (struct sockaddr *)&a, sizeof a);
+#if defined(__APPLE__) // no accept4 on Darwin; plain accept exercises the same path
+            int acc = accept(srv, NULL, NULL);
+#else
             int acc = strcmp(c, "write_accept4") == 0 ? accept4(srv, NULL, NULL, SOCK_CLOEXEC)
                                                       : accept(srv, NULL, NULL);
+#endif
             write(strcmp(c, "write_client") == 0 ? cli : acc, w, 5);
             close(acc);
             close(cli);
@@ -154,7 +172,13 @@ int main(int argc, char **argv) {
         send(sv[0], "x", 1, 0); // first look: blocked
         pthread_sigmask(SIG_UNBLOCK, &set, NULL);
     } else if (strcmp(c, "nosignal") == 0)
+#if defined(__APPLE__)
+        // No MSG_NOSIGNAL on Darwin: the per-socket option suppresses the
+        // signal instead, and the runtime honors it (see sockets.cpp).
+        do { int one = 1; setsockopt(sv[0], SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof one); } while (0);
+#else
         flags = MSG_NOSIGNAL;
+#endif
     else if (strcmp(c, "late") == 0) { // ignored for a while, then back to the default
         signal(SIGPIPE, SIG_IGN);
         send(sv[0], "x", 1, 0);
@@ -191,6 +215,20 @@ int main(int argc, char **argv) {
         mh.msg_iovlen = 1;
         sendmsg(sv[0], &mh, flags);
     } else if (strcmp(c, "sendmmsg") == 0 || strcmp(c, "sendmmsg_nosignal") == 0) {
+#if defined(__APPLE__)
+        // No sendmmsg on Darwin: one sendmsg with the same suppression.
+        // (The reported-sendmmsg test drops this case there.)
+        if (c[8] == '_') {
+            int one = 1;
+            setsockopt(sv[0], SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof one);
+        }
+        struct iovec iov = {(void *)msg, 5};
+        struct msghdr mh;
+        memset(&mh, 0, sizeof mh);
+        mh.msg_iov = &iov;
+        mh.msg_iovlen = 1;
+        sendmsg(sv[0], &mh, flags);
+#else
         if (c[8] == '_')
             flags = MSG_NOSIGNAL;
         struct iovec iov = {(void *)msg, 5};
@@ -199,6 +237,7 @@ int main(int argc, char **argv) {
         mm.msg_hdr.msg_iov = &iov;
         mm.msg_hdr.msg_iovlen = 1;
         sendmmsg(sv[0], &mm, 1, flags);
+#endif
     } else
         send(sv[0], msg, 5, flags);
     send(sv[0], msg, 5, flags); // a second send: reported once

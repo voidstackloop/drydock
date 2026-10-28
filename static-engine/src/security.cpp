@@ -1124,6 +1124,8 @@ struct Context {
     std::map<std::string, size_t> null_ptrs; // pointer name -> assignment token index
     std::set<std::string> null_reported;
     std::set<std::string> pointers;
+    std::map<std::string, size_t> moved; // moved-from name -> move() argument index
+    std::set<std::string> moved_reported;
 
     // Can `src`, a string held in a local array, not overflow the local array `dest`:
     // both sizes are known and dest is the bigger, or both are written the same way?
@@ -1915,6 +1917,32 @@ class Checker {
                     }
                 }
             }
+            // -- use-after-move records here, not in call(): is_call()
+            // skips qualified names, and move is almost always std::move.
+            if (t_[i].is("move") && i + 1 < body.e && t_[i + 1].is("(")) {
+                const size_t close = match(t_, i + 1);
+                if (close < body.e && close == i + 3 && t_[i + 2].kind == Tok::Ident) {
+                    const std::string r = c.root(t_[i + 2].text);
+                    c.moved[r] = i + 2;
+                    c.moved_reported.erase(r);
+                }
+            }
+            // -- use-after-move: any later mention of a moved-from name is a
+            // use, except giving it a new value (=), taking its address (&),
+            // or the move() argument itself (kept as the recorded index).
+            if (t_[i].kind == Tok::Ident && i + 1 < body.e && !member(t_, i)) {
+                const std::string r = c.root(t_[i].text);
+                auto mit = c.moved.find(r);
+                if (mit != c.moved.end() && mit->second != i && !t_[i + 1].is("=") &&
+                    !(i > body.b && t_[i - 1].is("&")) && c.moved_reported.insert(r).second) {
+                    issue("use-after-move",
+                          "'" + t_[i].text + "' is used after being passed to std::move() "
+                          "at line " + std::to_string(t_[mit->second].line) +
+                          ": a moved-from value is valid but unspecified; assign a new "
+                          "value first, or copy instead of moving",
+                          f.name, i);
+                }
+            }
             if (t_[i].kind == Tok::Ident && i + 1 < body.e && t_[i + 1].is("->")) {
                 const std::string &pname = t_[i].text;
                 if (c.null_ptrs.count(pname) && c.null_reported.insert(pname).second) {
@@ -2148,6 +2176,12 @@ class Checker {
         else
             c->outside_size.erase(t_[n].text);
 
+        // -- use-after-move: a new value restores the name, like NULL tracking.
+        if (t_[n].kind == Tok::Ident) {
+            const std::string r = c->root(t_[n].text);
+            c->moved.erase(r);
+            c->moved_reported.erase(r);
+        }
         // -- null-dereference: track pointer assignment to NULL / nullptr / 0
         if (t_[n].kind == Tok::Ident) {
             if (rhs.e == rhs.b + 1 &&
@@ -2270,8 +2304,22 @@ class Checker {
             for (size_t k = arg.b; k < arg.e; ++k) {
                 if (t_[k].is("&") && k + 1 < arg.e && t_[k + 1].kind == Tok::Ident) {
                     c->null_ptrs.erase(t_[k + 1].text);
+                    const std::string r = c->root(t_[k + 1].text);
+                    c->moved.erase(r);
+                    c->moved_reported.erase(r);
                 }
             }
+        }
+        // -- use-after-move: a bare move(x) (from `using namespace std`).
+        // std::move never reaches here: is_call() skips qualified names,
+        // so the token loop records it instead (see below).
+        // (shortcut: a program's own function called "move" counts too;
+        // narrow it to std::move if that ever fires on real code.)
+        if (name == "move" && a.size() == 1 && a[0].e == a[0].b + 1 &&
+            t_[a[0].b].kind == Tok::Ident) {
+            const std::string r = c->root(t_[a[0].b].text);
+            c->moved[r] = a[0].b;
+            c->moved_reported.erase(r);
         }
 
         // -- a function of this file: what it is given

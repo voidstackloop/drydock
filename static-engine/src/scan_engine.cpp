@@ -198,6 +198,16 @@ bool collect_files(const std::string &target_text, const Command &command,
             }
             std::error_code e2;
             if (it->is_directory(e2)) {
+                // Never anyone's target: version-control object stores are
+                // packed blobs, and .leakcheck-cache is this tool's own output
+                // (static skips dot-dirs the same way). An explicit file path
+                // inside still scans; only recursion prunes.
+                const std::string base = it->path().filename().generic_string();
+                if (base == ".git" || base == ".hg" || base == ".svn" ||
+                    base == ".bzr" || base == ".leakcheck-cache") {
+                    it.disable_recursion_pending();
+                    continue;
+                }
                 if (lcconfig::excluded(p, command.excludes)) {
                     if (!can_reinclude) {
                         ++hidden->dirs;
@@ -370,6 +380,12 @@ int run_scan(const Command &command) {
         std::fprintf(stderr, "leakcheck: '%s' does not exist\n", command.target.c_str());
         return kExitCouldNotAnalyse;
     }
+    if (command.list_only) {
+        // --list: the collected targets, one per line, scanned nothing.
+        for (const std::string &file : files)
+            std::puts(file.c_str());
+        return kExitClean;
+    }
 
     lcscan::AiModel model;
     AiRun ai;
@@ -443,6 +459,11 @@ int run_scan(const Command &command) {
         report.notes.push_back("no files found");
     if (command.malware)
         lcreport::add_composite_findings(report);
+    if (command.audit_deps)
+        lcreport::audit_dependencies(command.target, command.excludes, report);
+    if (command.prove)
+        lcreport::prove_findings(report);
+    lcreport::mark_reachable(report);
     lcreport::apply_rule_policy(report, command.rule_policy, command.strict);
 
     std::string error;
@@ -488,6 +509,12 @@ int run_ai_features(const Command &command) {
     if (!collect_files(command.target, command, &files, &hidden)) {
         std::fprintf(stderr, "leakcheck: '%s' does not exist\n", command.target.c_str());
         return kExitCouldNotAnalyse;
+    }
+    if (command.list_only) {
+        // --list: the collected targets, one per line, read no contents.
+        for (const std::string &file : files)
+            std::puts(file.c_str());
+        return kExitClean;
     }
     // The header names the columns, so the trainer can check them against the
     // model's own order instead of trusting that both sides agree.

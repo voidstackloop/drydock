@@ -13,7 +13,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/file.h>
+#if !defined(__APPLE__)
 #include <sys/sendfile.h>
+#endif
 #include <sys/resource.h>
 #include <sys/select.h>
 #include <sys/socket.h>
@@ -21,6 +23,15 @@
 #include <sys/uio.h>
 #include <sys/un.h>
 #include <unistd.h>
+
+#if defined(__APPLE__)
+// Darwin has no per-call NOSIGNAL flag (SO_NOSIGPIPE instead) and none of
+// the 64/v2 pread/pwrite aliases. The runtime defines MSG_NOSIGNAL as 0
+// there too, so plain sends behave the same here.
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0
+#endif
+#endif
 
 static void call_vdprintf(int fd, const char *fmt, ...) {
     va_list ap;
@@ -127,25 +138,38 @@ int main(int argc, char **argv) {
             readv(fd, &iov, 1);
         } else if (!strcmp(call, "pread"))
             pread(fd, buf, sizeof buf, 0);
+#if !defined(__APPLE__) // no 64-bit aliases on Darwin
         else if (!strcmp(call, "pread64"))
             pread64(fd, buf, sizeof buf, 0);
+#endif
         else if (!strcmp(call, "pwrite"))
             pwrite(fd, "x", 1, 0);
+#if !defined(__APPLE__)
         else if (!strcmp(call, "pwrite64"))
             pwrite64(fd, "x", 1, 0);
+#endif
         else if (!strcmp(call, "preadv")) {
             struct iovec iov = {buf, sizeof buf};
             preadv(fd, &iov, 1, 0);
-        } else if (!strcmp(call, "preadv64")) {
+        }
+#if !defined(__APPLE__)
+        else if (!strcmp(call, "preadv64")) {
             struct iovec iov = {buf, sizeof buf};
             preadv64(fd, &iov, 1, 0);
-        } else if (!strcmp(call, "pwritev")) {
+        }
+#endif
+        else if (!strcmp(call, "pwritev")) {
             struct iovec iov = {(void *)"x", 1};
             pwritev(fd, &iov, 1, 0);
-        } else if (!strcmp(call, "pwritev64")) {
+        }
+#if !defined(__APPLE__)
+        else if (!strcmp(call, "pwritev64")) {
             struct iovec iov = {(void *)"x", 1};
             pwritev64(fd, &iov, 1, 0);
-        } else if (!strcmp(call, "preadv2")) {
+        }
+#endif
+#if !defined(__APPLE__) // no preadv2/pwritev2 on Darwin
+        else if (!strcmp(call, "preadv2")) {
             struct iovec iov = {buf, sizeof buf};
             preadv2(fd, &iov, 1, 0, 0);
         } else if (!strcmp(call, "preadv64v2")) {
@@ -158,14 +182,21 @@ int main(int argc, char **argv) {
             struct iovec iov = {(void *)"x", 1};
             pwritev64v2(fd, &iov, 1, 0, 0);
         }
+#endif
         else if (!strcmp(call, "send"))
             send(fd, "x", 1, MSG_NOSIGNAL);
+#if !defined(__APPLE__) // Linux-only zero-copy calls
         else if (!strcmp(call, "copy_file_range"))
             copy_file_range(sv[1], NULL, fd, NULL, 1, 0);
         else if (!strcmp(call, "splice"))
             splice(sv[1], NULL, fd, NULL, 1, 0);
+#endif
         else if (!strcmp(call, "sendfile"))
+#if defined(__APPLE__) // Darwin order: file, socket, offset, length
+            do { off_t len = 1; sendfile(fd, sv[1], 0, &len, NULL, 0); } while (0);
+#else
             sendfile(fd, sv[1], NULL, 1);
+#endif
         else if (!strcmp(call, "recv"))
             recv(fd, buf, sizeof buf, 0);
         else if (!strcmp(call, "shutdown"))
@@ -177,8 +208,10 @@ int main(int argc, char **argv) {
             listen(fd, 5);
         else if (!strcmp(call, "accept"))
             accept(fd, NULL, NULL);
+#if !defined(__APPLE__) // no accept4 on Darwin; the test drops this call there
         else if (!strcmp(call, "accept4"))
             accept4(fd, NULL, NULL, SOCK_CLOEXEC);
+#endif
         else if (!strcmp(call, "flock"))
             flock(fd, LOCK_SH);
         else if (!strcmp(call, "fdopendir"))
@@ -265,18 +298,28 @@ int main(int argc, char **argv) {
     if (!strcmp(c, "reused_untracked")) { // reopened by a call the runtime does not see
         int fd = sv[0];
         close(fd);
+#if defined(__APPLE__)
+        // No raw-syscall hiding place on Darwin: a seen open of a directory
+        // still reads as EISDIR, not EBADF, so the case stays silent.
+        int again = open("/tmp", O_RDONLY | O_DIRECTORY);
+        read(fd, buf, sizeof buf); // fails with EISDIR, not EBADF
+        close(again);
+#else
         int again = (int)syscall(SYS_openat, AT_FDCWD, "/tmp", O_RDONLY | O_DIRECTORY);
         read(fd, buf, sizeof buf); // fails with EISDIR, not EBADF
         syscall(SYS_close, again);
+#endif
         close(sv[1]);
         return 0;
     }
+#if !defined(__APPLE__) // hiding close() needs raw syscalls, which Darwin renumbers
     if (!strcmp(c, "behind_the_back")) { // closed by a call the runtime does not see
         syscall(SYS_close, sv[0]);
         write(sv[0], "x", 1);
         close(sv[1]);
         return 0;
     }
+#endif
     if (!strcmp(c, "open_ok")) { // the descriptor is open: nothing to report
         write(sv[0], "x", 1);
         read(sv[1], buf, sizeof buf);

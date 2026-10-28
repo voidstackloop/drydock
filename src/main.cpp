@@ -25,6 +25,8 @@ static const char *usage =
     "  dynamic  <program>                         run the program under the allocation tracker\n"
     "  scan     <file|dir>                        look for malware in files without running them\n"
     "  ai-features <file|dir>                     print the numbers scan --ai reads per Windows\n"
+    "  lsp                                    language server over stdio (JSON-RPC)\n"
+    "  trend <report.json>                    append to a local CSV trend db and print it\n"
     "                                             program (what tools/train_ai.py trains on)\n"
     "\n"
     "Options:\n"
@@ -43,11 +45,23 @@ static const char *usage =
     "      --no-config            ignore leakcheck.toml and .leakcheckignore\n"
     "      --print-config         print the effective settings (file, then flags) and exit\n"
     "      --rule-list            print every rule with its CWE and default severity\n"
+    "      --list                 print what the target expands to and exit: the files\n"
+    "                             static/scan/ai-features would read, or the program\n"
+    "                             dynamic would run. Nothing is analysed or run\n"
     "      --enable-rule <id>     enable one rule (including a strict-only rule; repeatable)\n"
     "      --disable-rule <id>    hide one rule in every report format (repeatable)\n"
     "      --changed-only <ref>   static: only files changed against git <ref>\n"
     "      --no-cache             static: do not read or write the incremental cache\n"
     "      --strict               also report rules that missed the false-alarm budget\n"
+    "      --custom-rules <file>  static: extra id | pattern | message rules\n"      "      --gen-fuzz <dir>       static: emit libFuzzer stub harnesses\n"
+      "      --vcxproj <file>        static: write a VS project of scanned files\n"
+      "      --fix-commit <file>      static: write auto-fix patch, check it applies\n"
+    "      --profile <name>       rule preset: misra or balanced\n"
+    "      --prove                scan: demote uncorroborated families\n"
+    "      --audit-deps           scan: flag unpinned dependencies\n"
+    "      --backend <name>       dynamic: preload (today) or ebpf\n"
+    "      --record <file>        dynamic: keep the raw event stream\n"
+    "      --db <file>            trend: CSV db (default leakcheck-trend.csv)\n"
     "      --malware              also look for the 100 malware families (virus, worm, trojan,\n"
     "                             ransomware, spyware, rootkit, ... firmware malware): in files\n"
     "                             (scan: also inside apk, jar, zip, tgz, Office documents), in\n"
@@ -82,7 +96,8 @@ static const char *usage =
     "                             faster, but skips code built without\n"
     "                             -fno-omit-frame-pointer\n"
     "      --abort-on-error       stop the target at the first memory error\n"
-    "      --trace-children       also check processes started by the target\n";
+    "      --trace-children       also check processes started by the target\n"
+    "      --timeout <s>          kill the target after N seconds, 1-86400 (default: no limit)\n";
 
 static bool parse_int(const char *text, int min, int max, int *out)
 {
@@ -134,12 +149,17 @@ int main(int argc, char **argv)
             strcmp(arg, "--format") == 0 || strcmp(arg, "-s") == 0 ||
             strcmp(arg, "--suppressions") == 0 || strcmp(arg, "--error-exitcode") == 0 ||
             strcmp(arg, "--guard-every") == 0 || strcmp(arg, "--quarantine-mb") == 0 ||
-            strcmp(arg, "--stack-depth") == 0 || strcmp(arg, "-j") == 0 ||
+            strcmp(arg, "--stack-depth") == 0 || strcmp(arg, "--timeout") == 0 ||
+            strcmp(arg, "-j") == 0 ||
             strcmp(arg, "--jobs") == 0 || strcmp(arg, "--ai-model") == 0 ||
             strcmp(arg, "--ai-threshold") == 0 || strcmp(arg, "--exclude") == 0 ||
             strcmp(arg, "--config") == 0 || strcmp(arg, "--min-severity") == 0 ||
             strcmp(arg, "--changed-only") == 0 || strcmp(arg, "--enable-rule") == 0 ||
-            strcmp(arg, "--disable-rule") == 0 || strcmp(arg, "--diff-base") == 0;
+            strcmp(arg, "--disable-rule") == 0 || strcmp(arg, "--diff-base") == 0 ||
+            strcmp(arg, "--custom-rules") == 0 || strcmp(arg, "--gen-fuzz") == 0 ||
+            strcmp(arg, "--vcxproj") == 0 || strcmp(arg, "--fix-commit") == 0 ||
+            strcmp(arg, "--backend") == 0 || strcmp(arg, "--record") == 0 ||
+            strcmp(arg, "--profile") == 0 || strcmp(arg, "--db") == 0;
         if (takes_value && i + 1 == argc)
         {
             fprintf(stderr, "error: %s needs a value\n", arg);
@@ -226,6 +246,10 @@ int main(int argc, char **argv)
         else if (strcmp(arg, "--rule-list") == 0)
         {
             command.rule_list = true;
+        }
+        else if (strcmp(arg, "--list") == 0)
+        {
+            command.list_only = true;
         }
         else if (strcmp(arg, "--enable-rule") == 0 || strcmp(arg, "--disable-rule") == 0)
         {
@@ -316,6 +340,14 @@ int main(int argc, char **argv)
         {
             command.trace_children = true;
         }
+        else if (strcmp(arg, "--timeout") == 0)
+        {
+            if (!parse_int(argv[++i], 1, 86400, &command.timeout_sec))
+            {
+                fprintf(stderr, "error: --timeout expects 1-86400\n");
+                return kExitCouldNotAnalyse;
+            }
+        }
         else if (strcmp(arg, "--malware") == 0)
         {
             command.malware = true;
@@ -338,6 +370,46 @@ int main(int argc, char **argv)
                 return kExitCouldNotAnalyse;
             }
             command.ai_threshold = v;
+        }
+        else if (strcmp(arg, "--custom-rules") == 0)
+        {
+            command.custom_rules = argv[++i];
+        }
+        else if (strcmp(arg, "--gen-fuzz") == 0)
+        {
+            command.gen_fuzz = argv[++i];
+        }
+        else if (strcmp(arg, "--vcxproj") == 0)
+        {
+            command.vcxproj = argv[++i];
+        }
+        else if (strcmp(arg, "--fix-commit") == 0)
+        {
+            command.fix_commit = argv[++i];
+        }
+        else if (strcmp(arg, "--backend") == 0)
+        {
+            command.backend = argv[++i];
+        }
+        else if (strcmp(arg, "--record") == 0)
+        {
+            command.record_path = argv[++i];
+        }
+        else if (strcmp(arg, "--profile") == 0)
+        {
+            command.profile = argv[++i];
+        }
+        else if (strcmp(arg, "--db") == 0)
+        {
+            command.trend_db = argv[++i];
+        }
+        else if (strcmp(arg, "--prove") == 0)
+        {
+            command.prove = true;
+        }
+        else if (strcmp(arg, "--audit-deps") == 0)
+        {
+            command.audit_deps = true;
         }
         else if (strcmp(arg, "--diff-base") == 0)
         {
@@ -396,6 +468,18 @@ int main(int argc, char **argv)
             command.config_file = path;
         }
     }
+    if (!command.profile.empty()) {
+        if (command.profile == "misra") {
+            // MISRA-flavoured gate: every strict rule on, notes fail the gate.
+            command.strict = true;
+            if (!command.min_severity_set)
+                command.min_severity = "note";
+        } else if (command.profile != "balanced") {
+            fprintf(stderr, "leakcheck: unknown --profile '%s' (misra or balanced)\n",
+                    command.profile.c_str());
+            return kExitConfig;
+        }
+    }
     for (const RulePolicy &setting : command.rule_policy)
     {
         if (!lcreport::known_rule(setting.id))
@@ -440,18 +524,19 @@ int main(int argc, char **argv)
         return kExitClean;
     }
     if (command.mode != "dynamic" && command.mode != "static" && command.mode != "scan" &&
-        command.mode != "ai-features")
+        command.mode != "ai-features" && command.mode != "lsp" && command.mode != "trend")
     {
         fprintf(stderr,
-                "error: mode must be 'static', 'dynamic', 'scan' or 'ai-features'\n\n%s", usage);
+                "error: mode must be 'static', 'dynamic', 'scan', 'ai-features', 'lsp' or 'trend'\n\n%s", usage);
         return kExitCouldNotAnalyse;
     }
-    if (command.target.empty())
+    if (command.target.empty() && command.mode != "lsp")
     {
         fprintf(stderr, "error: target can't be empty\n");
         return kExitCouldNotAnalyse;
     }
-    if (!command.no_config && command.mode != "dynamic")
+    if (!command.no_config && command.mode != "dynamic" && command.mode != "lsp" &&
+        command.mode != "trend")
     {
         std::string error;
         if (!lcconfig::load_ignore_file(command, &error))
@@ -475,6 +560,16 @@ int main(int argc, char **argv)
     {
         fprintf(stderr, "error: --baseline needs a file\n");
         return kExitCouldNotAnalyse;
+    }
+    if (command.mode == "lsp") {
+        return lcreport::run_lsp(command);
+    }
+    if (command.mode == "trend") {
+        if (command.target.empty()) {
+            fprintf(stderr, "error: trend needs a report file\n");
+            return kExitCouldNotAnalyse;
+        }
+        return lcreport::run_trend(command);
     }
     if (command.mode == "triage")
     {
@@ -502,6 +597,16 @@ int main(int argc, char **argv)
     }
     if (command.mode == "dynamic")
     {
+        if (command.list_only)
+        {
+            // Say what would run, without running it: no preload check,
+            // no report file, no fork.
+            printf("%s", command.target.c_str());
+            for (const std::string &a : command.target_args)
+                printf(" %s", a.c_str());
+            putchar('\n');
+            return kExitClean;
+        }
         if ((command.output.empty() || command.output == "-") &&
             (command.format == "json" || command.format == "sarif" ||
              command.format == "junit" || command.format == "html" ||

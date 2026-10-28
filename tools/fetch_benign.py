@@ -27,6 +27,9 @@ Taxonomy it aims for, one directory each:
 | ``syswow64-dll-`` | SysWOW64\\*.dll (sampled) | the same, 32-bit |
 | ``dotnet-`` | Microsoft.NET\\Framework64\\v4.0.30319\\*.dll | managed assemblies |
 | ``dotnetexe-`` | Microsoft.NET\\Framework64\\v4.0.30319\\*.exe | managed executables |
+| ``dotnet32-`` | Microsoft.NET\\Framework\\v4.0.30319\\*.dll | 32-bit managed assemblies |
+| ``dotnet32exe-`` | Microsoft.NET\\Framework\\v4.0.30319\\*.exe | 32-bit managed executables |
+| ``winsxs-`` | WinSxS\\x86_*\\*.dll, wow64_*, msil_* | 32-bit and neutral side-by-side DLLs |
 | ``powershell-`` | System32 and SysWOW64 WindowsPowerShell\\v1.0\\*.exe | PowerShell's host programs |
 | ``driver-`` | System32\\drivers\\*.sys | kernel drivers |
 | ``driverstore-sys-`` | DriverStore\\FileRepository (recursive) | third-party drivers |
@@ -46,12 +49,18 @@ import sys
 
 # (prefix, relative folder, globs, how many to keep, largest file to copy)
 SOURCES = (
-    ("system32-exe-", "System32", ("*.exe",), 700, 12 << 20),
-    ("system32-dll-", "System32", ("*.dll",), 1200, 12 << 20),
-    ("syswow64-exe-", "SysWOW64", ("*.exe",), 400, 12 << 20),
-    ("syswow64-dll-", "SysWOW64", ("*.dll",), 700, 12 << 20),
+    ("system32-exe-", "System32", ("*.exe", "*.scr", "*.cpl"), 700, 12 << 20),
+    ("system32-dll-", "System32", ("*.dll", "*.ocx"), 1200, 12 << 20),
+    ("syswow64-exe-", "SysWOW64", ("*.exe", "*.scr", "*.cpl"), 400, 12 << 20),
+    ("syswow64-dll-", "SysWOW64", ("*.dll", "*.ocx"), 700, 12 << 20),
     ("dotnet-", os.path.join("Microsoft.NET", "Framework64", "v4.0.30319"), ("*.dll",), 250, 12 << 20),
     ("dotnetexe-", os.path.join("Microsoft.NET", "Framework64", "v4.0.30319"), ("*.exe",), 50, 12 << 20),
+    ("dotnet32-", os.path.join("Microsoft.NET", "Framework", "v4.0.30319"), ("*.dll",), 250, 12 << 20),
+    ("dotnet32exe-", os.path.join("Microsoft.NET", "Framework", "v4.0.30319"), ("*.exe",), 50, 12 << 20),
+    # Flat arch patterns, not **: a full recursive walk of WinSxS is minutes
+    # on a slow mount; the component folders themselves are flat.
+    ("winsxs-", "WinSxS", ("x86_*/*.dll", "wow64_*/*.dll", "msil_*/*.dll"),
+     500, 12 << 20),
     ("powershell-", os.path.join("System32", "WindowsPowerShell", "v1.0"), ("*.exe",), 20, 12 << 20),
     ("pswow-", os.path.join("SysWOW64", "WindowsPowerShell", "v1.0"), ("*.exe",), 20, 12 << 20),
     ("driver-", os.path.join("System32", "drivers"), ("*.sys",), 500, 12 << 20),
@@ -80,6 +89,16 @@ def candidates(folder, patterns, limit):
                 continue
             found.append((os.path.basename(path).lower(), path, size))
     found.sort()
+    # WinSxS holds one component per folder, so one basename repeats across
+    # versions; keep the first or a later copy silently overwrites it and the
+    # manifest counts a file that is not on disk.
+    seen = set()
+    unique = []
+    for row in found:
+        if row[0] not in seen:
+            seen.add(row[0])
+            unique.append(row)
+    found = unique
     available = len(found)
     if available > limit:
         step = (available - 1) / (limit - 1)

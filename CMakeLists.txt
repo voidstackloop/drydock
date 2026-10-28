@@ -145,8 +145,10 @@ add_library(leakcheck_core STATIC
     static-engine/src/scan_engine.cpp
     static-engine/src/security.cpp
     static-engine/src/static_engine.cpp
+    static-engine/src/lsp.cpp
     reporter/src/baseline.cpp
     reporter/src/compose.cpp
+    reporter/src/advanced.cpp
     reporter/src/render_console.cpp
     reporter/src/render_json.cpp
     reporter/src/render_junit.cpp
@@ -230,8 +232,12 @@ if(LEAKCHECK_BUILD_TESTS)
         set(test_programs no_bugs.c leaks.c heap_errors.c stress.c cxx_errors.cpp mixed_bugs.cpp
             threads.cpp win_resources.c win_locks.c win_locks_cxx.cpp win_behavior.c win_sockets.c)
     elseif(APPLE)
-        set(test_programs no_bugs.c leaks.c heap_errors.c processes.c stress.c
-            cxx_errors.cpp mixed_bugs.cpp threads.cpp signals.c dangling.c unsafe_libc.c)
+        # Same set as Linux: every program is guarded for Darwin (spin cases
+        # become mutex orderings, Linux-only syscalls are compiled out, and
+        # the few cases without a Darwin equivalent stay skipped in run_tests.py).
+        set(test_programs no_bugs.c leaks.c heap_errors.c processes.c alloc_api.c stress.c
+            cxx_errors.cpp mixed_bugs.cpp threads.cpp resources.c locks.c
+            signals.c dangling.c unsafe_libc.c sigpipe.c sockets.c behavior.c)
     else()
         set(test_programs no_bugs.c leaks.c heap_errors.c processes.c alloc_api.c stress.c
             cxx_errors.cpp mixed_bugs.cpp threads.cpp resources.c locks.c
@@ -283,7 +289,8 @@ if(LEAKCHECK_BUILD_TESTS)
 
     # The runtime's sources, minus the exported allocator and the process
     # hooks, built into an ordinary program so its logic can be driven directly.
-    if(NOT WIN32 AND NOT APPLE)
+    # Portable since the thread-exit wait stopped using SYS_gettid/SYS_tgkill.
+    if(NOT WIN32)
     add_executable(unit_runtime tests/unit/runtime_test.cpp tests/unit/locks_stub.cpp
         dynamic-engine/src/preload/blocks.cpp
         dynamic-engine/src/preload/guard.cpp
@@ -299,7 +306,7 @@ if(LEAKCHECK_BUILD_TESTS)
     endif()
 
     set(units unit_static unit_scan unit_ai unit_reporter)
-    if(NOT WIN32 AND NOT APPLE)
+    if(NOT WIN32)
         list(APPEND units unit_runtime)
     endif()
     foreach(unit ${units})
@@ -311,7 +318,7 @@ if(LEAKCHECK_BUILD_TESTS)
         if(WIN32)
             set(suites cli static scan windows)
         elseif(APPLE)
-            set(suites static scan cli)
+            set(suites cli dynamic static scan)
         else()
             set(suites cli dynamic static scan)
         endif()

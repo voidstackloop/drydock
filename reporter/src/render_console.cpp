@@ -131,6 +131,8 @@ void render_console(const Report &r, std::ostream &os) {
         if ((f.type == lcproto::kLeak || f.type == lcproto::kResourceLeak) &&
             !f.category.empty() && f.category != "static")
             os << " (" << category_words(f.category) << ')';
+        if (f.reachable)
+            os << " [reachable from outside input]";
         os << ": " << f.message << "\n";
         if (const lcmal::Family *fam = lcmal::family_of(f.type.c_str()))
             os << "    malware family: " << fam->name << "\n";

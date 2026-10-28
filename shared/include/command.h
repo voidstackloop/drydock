@@ -43,6 +43,7 @@ struct Command
     bool abort_on_error = false;
     bool fast_unwind = false;
     bool trace_children = false;
+    int timeout_sec = 0;  // --timeout: kill the target after N seconds (0: no limit)
     bool malware = false; // --malware: the deep scan for the 100 malware families
     int jobs = 0;         // scan/static: files read and analysed at the same time (0: one per CPU)
 
@@ -74,8 +75,20 @@ struct Command
     std::string changed_only; // git ref: only files changed against it
     bool no_cache = false;    // do not read or write the incremental cache
     bool rule_list = false;   // print the rule inventory and exit
+    bool list_only = false;   // --list: print the targets and exit, analyse nothing
     bool strict = false;      // also report the rules that did not meet the false-alarm budget
     bool metrics = false;     // print codebase security metrics & debt score
-    std::string diff_base;    // git ref: only fail on findings touching changed lines
+    std::string diff_base;
+    std::string custom_rules;
+    std::string gen_fuzz;
+    std::string vcxproj;   // static: write a VS project listing scanned files
+    std::string fix_commit; // static: write auto-fix patch, `git apply --check` it
+    std::string backend = "preload";
+    std::string record_path;
+    bool prove = false;
+    bool audit_deps = false;
+    std::string profile;
+    std::string trend_db;
+    // git ref: only fail on findings touching changed lines
     std::map<std::string, std::string> rule_severities; // [rules.<id>] severity overrides
 };

@@ -922,23 +922,20 @@ TEST(resources_closed_records_are_bounded) {
 }
 
 namespace {
-pid_t g_thread_tid;
+volatile int g_thread_done;
 
 void *note_tid(void *) {
-    __atomic_store_n(&g_thread_tid, pid_t(syscall(SYS_gettid)),
-                     __ATOMIC_RELEASE);
+    g_thread_done = 1;
     return nullptr;
 }
 
-// Waits until the thread started last has completely exited.
+// Waits until the thread started last has exited (SYS_gettid/SYS_tgkill are
+// Linux-only; a flag works everywhere: the test only needs the exit done).
 void wait_gone() {
-    for (;;) {
-        const pid_t t = __atomic_load_n(&g_thread_tid, __ATOMIC_ACQUIRE);
-        if (t && syscall(SYS_tgkill, getpid(), t, 0) != 0)
-            break;
+    while (!__atomic_load_n(&g_thread_done, __ATOMIC_ACQUIRE))
         usleep(1000);
-    }
-    g_thread_tid = 0;
+    usleep(10000);
+    __atomic_store_n(&g_thread_done, 0, __ATOMIC_RELEASE);
 }
 } // namespace
 

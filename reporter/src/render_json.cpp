@@ -118,6 +118,8 @@ void render_json(const Report &r, std::ostream &os) {
         if (!f.category.empty())
             j.kv("category", f.category);
         j.kv("severity", severity_of(f));
+        if (f.reachable)
+            j.kv("reachable", true);
         j.kv("message", f.message);
         if (const lcmal::Family *fam = lcmal::family_of(f.type.c_str()))
             j.kv("malware_family", fam->name);

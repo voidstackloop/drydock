@@ -29,7 +29,7 @@ $core = "static-engine/src/analyzer.cpp", "static-engine/src/lexer.cpp", "static
         "static-engine/src/malware_scan.cpp", "static-engine/src/malware_table.cpp",
         "static-engine/src/cache.cpp",
         "static-engine/src/scan.cpp", "static-engine/src/scan_engine.cpp", "static-engine/src/security.cpp",
-        "static-engine/src/static_engine.cpp", "reporter/src/baseline.cpp", "reporter/src/compose.cpp",
+        "static-engine/src/static_engine.cpp", "static-engine/src/lsp.cpp", "reporter/src/baseline.cpp", "reporter/src/compose.cpp", "reporter/src/advanced.cpp",
         "reporter/src/render_console.cpp", "reporter/src/render_html.cpp", "reporter/src/render_json.cpp",
         "reporter/src/render_markdown.cpp", "reporter/src/render_csv.cpp",
         "reporter/src/render_gitlab.cpp", "reporter/src/render_sonarqube.cpp", "reporter/src/render_patch.cpp",

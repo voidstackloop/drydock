@@ -51,6 +51,14 @@ LC_NOINLINE void check_slow(int fd, const char *how) {
             g_is_socket[fd] = kDatagram;
         return;
     }
+#if defined(__APPLE__)
+    // Darwin has no MSG_NOSIGNAL: per-call suppression is the SO_NOSIGPIPE
+    // option instead. A socket that sets it gets EPIPE, not a signal.
+    int nosigpipe = 0;
+    socklen_t nn = sizeof nosigpipe;
+    if (getsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &nosigpipe, &nn) == 0 && nosigpipe)
+        return;
+#endif
     const uint32_t epoch = __atomic_load_n(&g_epoch, __ATOMIC_ACQUIRE);
     struct sigaction sa;
     sigset_t blocked;

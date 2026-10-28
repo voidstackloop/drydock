@@ -48,6 +48,7 @@ ORIGIN_NAMES = {
     "benign": "crovax/CNN_Project (an old Windows system)",
     "benign-modern": "a Windows 11 installation",
     "malware": "crovax/CNN_Project",
+    "malware-bazaar": "MalwareBazaar daily batches (recent droppers, packed, 64-bit)",
 }
 READ_LIMIT = 16 << 20  # same prefix the scanner reads
 # Features the shipped model leaves out, because on this collection they mark

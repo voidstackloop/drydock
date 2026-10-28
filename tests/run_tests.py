@@ -83,6 +83,80 @@ def expect(cond, msg):
 TESTS = []
 POSIX_ONLY = set()  # tests that need a shell, /bin or a Linux program
 
+IS_DARWIN = sys.platform == "darwin"
+# Only what Darwin cannot do at all: no spin-lock API (its mutex stand-in
+# reports mutex findings), no memfd/fexecve/execveat/pidfd/process_vm,
+# no prctl/personality/capset/iopl, no dlmopen/getaddrinfo_a/sendmmsg/renameat2/
+# umount2/64-bit aliases/mqueue, no unhookable-hidden-syscall cases, and no
+# non-PIE binaries. Everything else runs: the programs are guarded for
+# Darwin (see the CMake APPLE list) and the loops below drop single cases.
+DARWIN_SKIP = {
+    # spin locks do not exist: the stand-in reports mutex findings instead
+    "lock_spin_relock",
+    "lock_spin_inversion",
+    "lock_destroy_other_spin",
+    # the runtime reads glibc's mutex owner word for these; on Darwin the
+    # checks are no-ops (see locks.cpp: destroyed, before_unlock,
+    # before_orphan_lock, mutex other_holds)
+    "lock_orphaned_by_fork",
+    "lock_mutex_as_signal_is_not_a_relock",
+    "lock_orphaned_by_thread_exit",
+    "lock_foreign_unlock",
+    "lock_destroy_other",
+    "lock_lock_destroyed",
+    "lock_unlock_destroyed",
+    "lock_wait_destroyed",
+    # no Linux-only requests to read or write another process
+    "behavior_ptrace_poke",
+    "behavior_ptrace_peek",
+    "behavior_ptrace_setregset",
+    "behavior_pidfd_steal",
+    "behavior_inject_vm",
+    "behavior_cred_vm_read",
+    # no memfd: nothing can live only in memory
+    "behavior_fileless",
+    "behavior_fileless_path",
+    "behavior_fileless_deleted",
+    "behavior_masq_memfd",
+    # no prctl/personality: renamed processes and ASLR stay Linux-only
+    "behavior_masq_prctl",
+    "behavior_masq_exe",
+    "behavior_aslr_off",
+    # no capabilities or port access
+    "behavior_cap_set",
+    "behavior_cap_raise",
+    "behavior_iopl_on",
+    "behavior_ioperm_on",
+    # no dlmopen/getaddrinfo_a/sendmmsg/renameat2/umount2/64-bit aliases/mqueue
+    "behavior_dropper_dlmopen",
+    "behavior_host_getaddrinfo_a",
+    "behavior_scan_sendmmsg",
+    "behavior_persist_renameat2",
+    "behavior_ransom_renameat2",
+    "behavior_log_truncate64",
+    "behavior_log_ftruncate64",
+    "behavior_sys_umount2",
+    "behavior_mq_world",
+    "behavior_persist_preload",
+    "behavior_api_open64",
+    "behavior_api_openat64",
+    "behavior_api___open_2",
+    "behavior_api___open64_2",
+    "behavior_api___openat_2",
+    "behavior_api___openat64_2",
+    "behavior_api_creat64",
+    "behavior_api_fopen64",
+    # no fexecve/execveat: the shell must come from an ordinary exec
+    "behavior_api_fexecve",
+    "behavior_api_execveat",
+    "behavior_execveat_empty_path_is_a_reverse_shell",
+    # Linux-only user and group identity calls
+    "behavior_setresuid_root",
+    "behavior_setfsuid_root",
+    "behavior_setresgid_root",
+    "behavior_setfsgid_root",
+}
+
 
 def posix_only(fn):
     POSIX_ONLY.add(fn.__name__)
@@ -143,6 +217,25 @@ def cli_rule_list_is_an_inventory():
 
 
 @test("cli")
+def cli_list_shows_targets_without_running():
+    d = os.path.join(ARGS.source, "tests", "static", "cases")
+    p = run(["static", "--list", d])
+    expect(p.returncode == 0, f"exit {p.returncode}: {p.stderr}")
+    listed = p.stdout.splitlines()
+    expect(len(listed) >= 2, p.stdout[:500])
+    expect(any(l.endswith("c_bugs.c") for l in listed), p.stdout[:500])
+    for line in listed:
+        expect(os.path.isfile(line), f"--list printed a file that is not there: {line}")
+    p = run(["scan", "--list", d])
+    expect(p.returncode == 0 and p.stdout.strip(), f"exit {p.returncode}: {p.stderr}")
+    # dynamic --list must not fork: a program that does not exist still
+    # lists cleanly (running it would exit 127).
+    p = run(["dynamic", "--list", "/nonexistent-prog-xyz", "a", "b"])
+    expect(p.returncode == 0, f"exit {p.returncode}: {p.stderr}")
+    expect(p.stdout == "/nonexistent-prog-xyz a b\n", repr(p.stdout))
+
+
+@test("cli")
 @posix_only
 def cli_arguments_after_program_are_its_own():
     # Even options leakcheck also has, and a "--" of the program's own.
@@ -154,6 +247,42 @@ def cli_arguments_after_program_are_its_own():
     p, _ = run_json(["dynamic", "--"] + echo + ["a"])
     expect(p.returncode == 0 and p.stdout == "a|", (p.returncode, p.stdout, p.stderr))
     expect(run(["dynamic", "--"]).returncode == 1, "-- without a program fails")
+
+
+@test("cli")
+@posix_only
+def cli_dynamic_timeout_kills_a_hang():
+    import time
+    started = time.time()
+    p = run(["dynamic", "--timeout", "1", "sleep", "30"])
+    expect(time.time() - started < 25, "the timeout killed sleep after ~1s")
+    expect(p.returncode == 128 + 9, f"killed by SIGKILL: exit {p.returncode}")
+    expect("timed out after 1s" in p.stdout, p.stdout[:500])
+    expect(run(["dynamic", "--timeout", "0", "true"]).returncode == 1,
+           "--timeout 0 is rejected")
+
+
+@test("cli")
+@posix_only
+def cli_scan_skips_version_control_and_own_cache():
+    import shutil
+    eicar = "X5O!P%@AP[4\\PZX54(P^)7CC)7}$" + "EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
+    with tempfile.TemporaryDirectory() as d:
+        os.makedirs(os.path.join(d, ".git", "objects"))
+        with open(os.path.join(d, ".git", "objects", "pack.bin"), "w") as f:
+            f.write(eicar)
+        os.makedirs(os.path.join(d, ".leakcheck-cache"))
+        with open(os.path.join(d, ".leakcheck-cache", "stale.bin"), "w") as f:
+            f.write(eicar)
+        with open(os.path.join(d, "clean.txt"), "w") as f:
+            f.write("nothing to see here\n")
+        # Recursion prunes stores and tool output: the packed EICAR is silent.
+        p = run(["scan", "--list", d])
+        expect(p.returncode == 0, f"exit {p.returncode}: {p.stderr}")
+        expect(p.stdout.strip().endswith("clean.txt"), repr(p.stdout))
+        # An explicit file path still scans: nothing was made unscannable.
+        p = run(["scan", os.path.join(d, ".git", "objects", "pack.bin")])
+        expect(p.returncode == 2, f"exit {p.returncode}: {p.stderr}")
 
 
 @test("cli")
@@ -442,8 +571,11 @@ for _case in HEAP_CASES:
 
 @test("dynamic")
 def non_pie_executable_symbolizes():
-    check_heap_case("heap_errors_nopie", "double-free")
-    _, r = run_json(["dynamic", prog("heap_errors_nopie"), "double-free"])
+    # Darwin links everything PIE: the same symbolization check runs on the
+    # ordinary binary there (the non-PIE binary is Linux-only).
+    binary = "heap_errors" if IS_DARWIN else "heap_errors_nopie"
+    check_heap_case(binary, "double-free")
+    _, r = run_json(["dynamic", prog(binary), "double-free"])
     frame = top(r["findings"][0], "access")
     expect(frame.get("file", "").endswith("heap_errors.c") and frame.get("line", 0) > 0, frame)
 
@@ -784,9 +916,13 @@ def unsafe_libc_used_safely_is_silent():
 def sigpipe_exposure_reported_once_per_run():
     # "late": ignored first, back to the default afterwards. "thread": main
     # blocks the signal, the worker started earlier has not.
-    for case, where in (("send", "main"), ("sendto", "main"), ("sendmsg", "main"),
-                        ("sendmmsg", "main"),
-                        ("late", "main"), ("thread", "worker"), ("threads", "worker")):
+    # No sendmmsg on Darwin: the program falls back to sendmsg there.
+    pairs = (("send", "main"), ("sendto", "main"), ("sendmsg", "main"),
+             ("sendmmsg", "main"),
+             ("late", "main"), ("thread", "worker"), ("threads", "worker"))
+    if IS_DARWIN:
+        pairs = tuple(p for p in pairs if p[0] != "sendmmsg")
+    for case, where in pairs:
         p, r = run_json(["dynamic", prog("sigpipe"), case], timeout=60)
         expect(p.returncode == 2 and types(r) == ["sigpipe-exposure"], f"{case}: exit {p.returncode}: {types(r)}")
         f = r["findings"][0]
@@ -845,11 +981,19 @@ def sigpipe_exposure_write_on_a_socket():
 
 @test("dynamic")
 def sockets_use_after_close_on_a_closed_descriptor():
-    for call in ("write", "writev", "read", "readv", "pread", "pread64", "pwrite",
-                 "pwrite64", "preadv", "preadv64", "pwritev", "pwritev64",
+    # Darwin has no 64-bit pread aliases, preadv2/pwritev2, copy_file_range,
+    # splice or accept4: the program compiles those branches out.
+    calls = ("write", "writev", "read", "readv", "pread", "pread64", "pwrite",
+             "pwrite64", "preadv", "preadv64", "pwritev", "pwritev64",
                  "preadv2", "preadv64v2", "pwritev2", "pwritev64v2",
                  "send", "sendfile", "copy_file_range", "splice", "recv", "shutdown", "connect", "listen", "accept",
-                 "accept4", "flock", "fdopendir", "dprintf", "vdprintf"):
+                 "accept4", "flock", "fdopendir", "dprintf", "vdprintf")
+    if IS_DARWIN:
+        calls = tuple(c for c in calls
+                      if c not in ("pread64", "pwrite64", "preadv64", "pwritev64",
+                                   "preadv2", "preadv64v2", "pwritev2", "pwritev64v2",
+                                   "copy_file_range", "splice", "accept4"))
+    for call in calls:
         p, r = run_json(["dynamic", prog("sockets"), "closed_" + call], timeout=60)
         expect(p.returncode == 2 and types(r) == ["use-after-close"], f"{call}: exit {p.returncode}: {types(r)}")
         f = r["findings"][0]
@@ -866,8 +1010,12 @@ def sockets_use_after_close_silent_when_nothing_was_closed():
     # closed and then opened again as another file (also by a call the runtime
     # does not see: read() then fails with EISDIR, which is not EBADF)
     # (a close the runtime did not see leaves the record open: not judged)
-    for case in ("open_ok", "never_open", "reused", "reused_untracked", "behind_the_back",
-                 "accept_eagain"):
+    # (Darwin cannot hide close(): every libc call is interposed.)
+    cases = ("open_ok", "never_open", "reused", "reused_untracked", "behind_the_back",
+             "accept_eagain")
+    if IS_DARWIN:
+        cases = tuple(c for c in cases if c != "behind_the_back")
+    for case in cases:
         p, r = run_json(["dynamic", prog("sockets"), case], timeout=60)
         expect(p.returncode == 0 and r["findings"] == [], f"{case}: exit {p.returncode}: {types(r)}")
 
@@ -1981,6 +2129,45 @@ def scan_ignore_reincludes_a_nested_file():
 
 
 @test("scan")
+def scan_audit_deps_ignores_vendored_manifests():
+    # 60 vendored manifests would fill the 50-manifest cap before the root
+    # one is ever read; pruned dirs never enter the walk.
+    with tempfile.TemporaryDirectory() as tmp:
+        with open(os.path.join(tmp, "conanfile.txt"), "w") as f:
+            f.write("[requires]\nloose-pkg\n")
+        mods = os.path.join(tmp, "node_modules")
+        os.makedirs(mods)
+        for i in range(60):
+            d = os.path.join(mods, f"mod{i}")
+            os.makedirs(d)
+            with open(os.path.join(d, "package.json"), "w") as f:
+                f.write('{ "name": "x" }\n')
+        os.makedirs(os.path.join(tmp, ".git", "objects"))
+        with open(os.path.join(tmp, ".git", "objects", "pack"), "w") as f:
+            f.write("x")
+        p, r = run_json(["scan", "--audit-deps", tmp])
+        expect(types(r) == ["unpinned-dependency"], types(r))
+        expect("loose-pkg" in r["findings"][0]["message"], r["findings"][0]["message"])
+
+
+@test("scan")
+def scan_audit_deps_honors_ignored_dirs():
+    with tempfile.TemporaryDirectory() as tmp:
+        with open(os.path.join(tmp, "conanfile.txt"), "w") as f:
+            f.write("[requires]\nloose-pkg\n")
+        os.makedirs(os.path.join(tmp, "legacy"))
+        with open(os.path.join(tmp, "legacy", "conanfile.txt"), "w") as f:
+            f.write("[requires]\nold-pkg\n")
+        p, r = run_json(["scan", "--audit-deps", tmp])
+        expect(sorted(types(r)) == ["unpinned-dependency", "unpinned-dependency"], types(r))
+        with open(os.path.join(tmp, ".leakcheckignore"), "w") as f:
+            f.write("legacy/**\n")
+        p, r = run_json(["scan", "--audit-deps", tmp])
+        expect(types(r) == ["unpinned-dependency"], types(r))
+        expect("loose-pkg" in r["findings"][0]["message"], r["findings"][0]["message"])
+
+
+@test("scan")
 @posix_only
 def scan_eicar_file_is_reported():
     with tempfile.TemporaryDirectory() as d:
@@ -2558,6 +2745,8 @@ def main():
         if (suite == "windows") != (WIN and suite == "windows") or (WIN and suite == "dynamic"):
             continue  # each system runs the suite that has its programs
         if WIN and fn.__name__ in POSIX_ONLY:
+            continue
+        if IS_DARWIN and fn.__name__ in DARWIN_SKIP:
             continue
         try:
             fn()

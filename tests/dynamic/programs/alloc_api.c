@@ -1,7 +1,11 @@
 // Exercises every allocation entry point and checks the results the program
 // can observe: alignment, zeroing, realloc contents, errno, usable size.
 #include <errno.h>
+#if defined(__APPLE__)
+#include <malloc/malloc.h>
+#else
 #include <malloc.h>
+#endif
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -43,9 +47,17 @@ int main(void) {
         p = aligned_alloc(a, a * 3);
         CHECK(p && ((uintptr_t)p % a) == 0);
         free(p);
+#if defined(__APPLE__)
+        // Darwin has no memalign(): a second posix_memalign covers the same
+        // entry point the runtime hooks there.
+        CHECK(posix_memalign(&p, a, 7) == 0);
+        CHECK(p && ((uintptr_t)p % a) == 0);
+        free(p);
+#else
         p = memalign(a, 7);
         CHECK(p && ((uintptr_t)p % a) == 0);
         free(p);
+#endif
     }
     void *v = valloc(10);
     CHECK(v && ((uintptr_t)v % (uintptr_t)sysconf(_SC_PAGESIZE)) == 0);
@@ -61,7 +73,11 @@ int main(void) {
     CHECK(malloc(SIZE_MAX - 4096) == NULL && errno == ENOMEM);
 
     char *u = malloc(37);
+#if defined(__APPLE__)
+    CHECK(malloc_size(u) >= 37);
+#else
     CHECK(malloc_usable_size(u) >= 37);
+#endif
     free(u);
 
     errno = 1234;
