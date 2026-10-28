@@ -78,8 +78,17 @@ bool run_capture(const std::vector<std::string> &args, std::string *out) {
 // not be started or did not exit with status 0.
 bool run_capture(const std::vector<std::string> &args, std::string *out) {
     int fds[2];
+#if defined(__APPLE__)
+    // Darwin has no pipe2(): the same close-on-exec pair, set afterwards (the
+    // child inherits the write end on purpose, and dup2() clears the flag).
+    if (pipe(fds) != 0)
+        return false;
+    fcntl(fds[0], F_SETFD, FD_CLOEXEC);
+    fcntl(fds[1], F_SETFD, FD_CLOEXEC);
+#else
     if (pipe2(fds, O_CLOEXEC) != 0)
         return false;
+#endif
     pid_t pid = fork();
     if (pid < 0) {
         close(fds[0]);
