@@ -130,9 +130,15 @@ void trace_step(const char *what) {
     for (; *what && n + 1 < sizeof line; ++what)
         line[n++] = *what;
     line[n++] = '\n';
-    // raw syscall: write() is one of the functions this library hooks, and this
-    // runs while the runtime is still setting itself up.
+    // Raw syscall: write() is one of the functions this library hooks, and this
+    // runs while the runtime is still setting itself up. syscall(2) is deprecated
+    // on Darwin (there is no supported replacement for putting bytes on a
+    // descriptor without going through libc), so the warning is turned off here
+    // and only here.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     syscall(SYS_write, 2, line, n);
+#pragma clang diagnostic pop
 }
 #else
 void trace_step(const char *what) { (void)what; }
