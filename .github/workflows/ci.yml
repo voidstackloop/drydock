@@ -109,14 +109,21 @@ jobs:
             [ -n "$syms" ] && echo "::error title=macos undefined symbols::${syms}"
             exit 1
           fi
+      # --timeout bounds each test: one that never finishes is a failure ctest
+      # reports with the output it had, where a job-wide timeout would end the
+      # step before anything could say which test it was.
       - name: Unit tests and the command-line suites
         run: |
           set -o pipefail
-          if ! ctest --test-dir build --output-on-failure 2>&1 | tee tests-macos.log; then
-            grep -E "^(FAIL|The following tests FAILED)|error:" tests-macos.log | head -n 10 |
-              while IFS= read -r line; do echo "::error title=macos tests::${line}"; done
-            exit 1
-          fi
+          ctest --test-dir build --output-on-failure --timeout 300 2>&1 | tee tests-macos.log
+      - name: Report what the tests said
+        if: failure()
+        run: |
+          grep -E "^(FAIL|The following tests FAILED)|error:" tests-macos.log | head -n 5 |
+            while IFS= read -r line; do echo "::error title=macos tests::${line}"; done
+          tail -n 5 tests-macos.log |
+            while IFS= read -r line; do echo "::error title=macos tests stopped at::${line}"; done
+          exit 1
 
   # Reports only, without the runtime: this job proves the JSON and SARIF are
   # the same bytes as on the other two systems, and stays fast enough that a
