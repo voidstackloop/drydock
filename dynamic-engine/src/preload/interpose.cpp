@@ -229,6 +229,15 @@ LC_API void *LC_FN(pvalloc)(size_t n) noexcept {
     return c_alloc(Kind::Memalign, n ? round_up(n, pg) : pg, pg, false);
 }
 
+#if defined(__APPLE__)
+namespace {
+size_t zone_size(const void *p) {
+    malloc_zone_t *zone = malloc_default_zone();
+    return zone->size(zone, p);
+}
+} // namespace
+#endif
+
 LC_API size_t LC_FN(malloc_usable_size)(void *p) noexcept {
     if (!p)
         return 0;
@@ -236,13 +245,14 @@ LC_API size_t LC_FN(malloc_usable_size)(void *p) noexcept {
         return ih::usable(p);
     ensure_init();
 #if defined(__APPLE__)
-    // libSystem's own answer for a pointer it owns. dlsym() would find this
-    // function again, and the caller (libSystem itself, which calls malloc_size
-    // on its own behalf) would never get a size.
+    // libSystem's own answer for a pointer it owns. Neither malloc_size() nor
+    // dlsym() can give it here (the first is interposed by this dylib and would
+    // come back to this function, the second finds the same thing), but the zone
+    // carries its own size function, which nothing rewrites.
     if (!g_cfg.active)
-        return malloc_zone_size(malloc_default_zone(), p);
+        return zone_size(p);
     const size_t mine = heap_usable(p);
-    return mine ? mine : malloc_zone_size(malloc_default_zone(), p);
+    return mine ? mine : zone_size(p);
 #else
     if (!g_cfg.active) {
         using Fn = size_t (*)(void *);
