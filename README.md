@@ -22,7 +22,7 @@ A fourth command, `ai-features`, prints the numbers that `scan --ai` reads from 
 
 ## Quick start
 
-**Linux or macOS** (CMake 3.28+, a C++20 compiler, Python 3 for the tests):
+**Linux or macOS** (CMake 3.28+, a C++20 compiler, Python 3 for the tests macOS is not tested on real hardware!):
 
 ```sh
 cmake -S . -B build -G Ninja && cmake --build build
