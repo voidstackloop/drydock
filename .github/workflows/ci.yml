@@ -144,6 +144,15 @@ jobs:
           wait "$job" || true
           tail -n 4 one.out |
             while IFS= read -r line; do echo "::error title=macos one run::${line}"; done
+          # The target dies too fast to sample: let lldb stop on the signal and
+          # print where it stopped. ROOT_PID=0 makes the runtime active without
+          # leakcheck having started the process itself.
+          DYLD_INSERT_LIBRARIES="$PWD/build/libleakcheck_preload.dylib" \
+            LEAKCHECK_ROOT_PID=0 LEAKCHECK_REPORT="$PWD/lldb-report.txt" \
+            lldb --batch -o run -o 'bt all' -o quit -- build/test-programs/no_bugs \
+            > lldb.out 2>&1 || true
+          grep -E 'frame #[0-9]+:' lldb.out | head -n 6 |
+            while IFS= read -r line; do echo "::error title=macos crash::$(echo "$line" | cut -c1-200)"; done
           exit 1
 
   # Reports only, without the runtime: this job proves the JSON and SARIF are

