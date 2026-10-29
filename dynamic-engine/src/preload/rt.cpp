@@ -16,6 +16,7 @@
 #if defined(__APPLE__)
 #include <pthread.h>
 #include <mach-o/dyld.h>
+#include <malloc/malloc.h>
 #endif
 
 namespace lc {
@@ -401,61 +402,38 @@ void reset_lock() { g_lock.reset(); }
 
 #if defined(__APPLE__)
 namespace {
-// glibc spells for the allocator the wrappers use when tracking is off: the
-// backing store of a tracked block, and a pointer the program never asked us
-// to track. On Linux those are libc's own entry points. Here they are not:
-// dyld's interpose table rewrites every reference to `malloc` in the process,
-// and that includes the references in this dylib, so `free(p)` written in this
-// file is `lc_free`, and the fallback below would hand the pointer straight
-// back: free -> heap_free -> "not one of ours" -> free, forever, until the
-// stack runs out. libSystem's own functions are the ones behind RTLD_NEXT.
-template <class F> F libsystem(F &slot, const char *name) {
-    F f = __atomic_load_n(&slot, __ATOMIC_ACQUIRE);
-    if (LC_LIKELY(f != nullptr))
-        return f;
-    void *sym;
-    {
-        lc::HookGuard hg;
-        sym = dlsym(RTLD_NEXT, name);
-    }
-    if (!sym)
-        lc::die("cannot find the allocator to forward to");
-    f = reinterpret_cast<F>(sym);
-    __atomic_store_n(&slot, f, __ATOMIC_RELEASE);
-    return f;
+// glibc spellings for the allocator the wrappers use when tracking is off: the
+// backing store of a tracked block, and a pointer the program never asked us to
+// track. On Linux those are libc's own entry points. On Darwin they are not:
+// dyld's interpose table rewrites every reference to `malloc` and `free` in the
+// process, and that includes the references inside this dylib, so `dlsym(RTLD_NEXT,
+// "malloc")` hands back lc_malloc and the fallback becomes a loop that only ends
+// when the stack does - which is what killed every target, tracked or not.
+// The zone API is not in the table and does not go through those symbols.
+malloc_zone_t *system_zone() {
+    static malloc_zone_t *zone;
+    if (!zone)
+        zone = malloc_default_zone();
+    return zone;
 }
-
-using MallocFn = void *(*)(size_t);
-using CallocFn = void *(*)(size_t, size_t);
-using ReallocFn = void *(*)(void *, size_t);
-using MemalignFn = int (*)(void **, size_t, size_t);
-using FreeFn = void (*)(void *);
-
-MallocFn g_system_malloc;
-CallocFn g_system_calloc;
-ReallocFn g_system_realloc;
-MemalignFn g_system_memalign;
-FreeFn g_system_free;
 } // namespace
 
 extern "C" {
-void *__libc_malloc(size_t n) {
-    return libsystem(g_system_malloc, "malloc")(n);
-}
+void *__libc_malloc(size_t n) { return malloc_zone_malloc(system_zone(), n); }
 void *__libc_calloc(size_t a, size_t b) {
-    return libsystem(g_system_calloc, "calloc")(a, b);
+    return malloc_zone_calloc(system_zone(), a, b);
 }
 void *__libc_realloc(void *p, size_t n) {
-    return libsystem(g_system_realloc, "realloc")(p, n);
+    return malloc_zone_realloc(system_zone(), p, n);
 }
 void *__libc_memalign(size_t align, size_t n) {
     if (align < sizeof(void *))
         align = sizeof(void *);
-    void *p = nullptr;
-    return libsystem(g_system_memalign, "posix_memalign")(&p, align, n) == 0
-               ? p
-               : nullptr;
+    return malloc_zone_memalign(system_zone(), align, n);
 }
-void __libc_free(void *p) { libsystem(g_system_free, "free")(p); }
+void __libc_free(void *p) {
+    if (p)
+        malloc_zone_free(system_zone(), p);
+}
 } // extern "C"
 #endif

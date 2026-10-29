@@ -6,6 +6,9 @@
 #include "signals.h"
 
 #include <cerrno>
+#if defined(__APPLE__)
+#include <malloc/malloc.h>
+#endif
 #include <cstring>
 #include <dlfcn.h>
 #include <new>
@@ -232,22 +235,26 @@ LC_API size_t LC_FN(malloc_usable_size)(void *p) noexcept {
     if (ih::owns(p))
         return ih::usable(p);
     ensure_init();
+#if defined(__APPLE__)
+    // libSystem's own answer for a pointer it owns. dlsym() would find this
+    // function again, and the caller (libSystem itself, which calls malloc_size
+    // on its own behalf) would never get a size.
+    if (!g_cfg.active)
+        return malloc_zone_size(malloc_default_zone(), p);
+    const size_t mine = heap_usable(p);
+    return mine ? mine : malloc_zone_size(malloc_default_zone(), p);
+#else
     if (!g_cfg.active) {
         using Fn = size_t (*)(void *);
         static Fn real;
         if (!real) {
             HookGuard hg;
-            real = reinterpret_cast<Fn>(dlsym(RTLD_NEXT,
-#if defined(__APPLE__)
-                                             "malloc_size"
-#else
-                                             "malloc_usable_size"
-#endif
-                                             ));
+            real = reinterpret_cast<Fn>(dlsym(RTLD_NEXT, "malloc_usable_size"));
         }
         return real ? real(p) : 0;
     }
     return heap_usable(p);
+#endif
 }
 
 #if defined(__APPLE__)
