@@ -154,6 +154,17 @@ jobs:
           grep -E 'frame #[0-9]+:' lldb.out | head -n 6 |
             while IFS= read -r line; do echo "::error title=macos crash::$(echo "$line" | cut -c1-200)"; done
           exit 1
+      # The runtime's own unit test links the sources without injecting them: it
+      # is the shortest path to a stack for a memory bug in the Darwin paths.
+      - name: Where the runtime's unit test dies
+        if: failure()
+        run: |
+          lldb --batch -o run -o 'bt 14' -o quit -- build/unit_runtime > unit-lldb.out 2>&1 || true
+          grep -E 'frame #[0-9]+:' unit-lldb.out | head -n 8 |
+            while IFS= read -r line; do echo "::error title=unit_runtime crash::$(echo "$line" | cut -c1-200)"; done
+          tail -n 3 unit-lldb.out |
+            while IFS= read -r line; do echo "::error title=unit_runtime tail::${line}"; done
+          exit 1
 
   # Reports only, without the runtime: this job proves the JSON and SARIF are
   # the same bytes as on the other two systems, and stays fast enough that a
