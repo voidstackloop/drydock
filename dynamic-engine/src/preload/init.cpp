@@ -149,6 +149,30 @@ int main_hook(int argc, char **argv, char **envp) {
 
 __attribute__((constructor(101))) void on_load() {
     ensure_init();
+#if defined(__APPLE__)
+    // dyld refuses an inserted library whose architecture the program does not
+    // have, and Apple's own programs (/bin/sh, /bin/true, /usr/bin/sleep) are
+    // arm64e: a program that runs a shell under analysis would abort in the
+    // shell. Children are only analysed on request, so the variable goes here,
+    // before the program or anything it spawns can see it. Linux keeps
+    // LD_PRELOAD: glibc loads it everywhere, and a child that inherits it runs
+    // as a passive runtime rather than aborting.
+    //
+    // The array is edited in place rather than through unsetenv(): that call is
+    // one of the hooked ones, and this is the runtime tidying up after itself,
+    // not the program touching its environment.
+    if (!g_cfg.trace_children) {
+        static constexpr char kPreload[] = "DYLD_INSERT_LIBRARIES=";
+        extern char **environ;
+        for (char **e = environ; e && *e; ++e) {
+            if (std::strncmp(*e, kPreload, sizeof kPreload - 1) == 0) {
+                for (char **m = e; *m; ++m)
+                    *m = *(m + 1);
+                --e; // the slot now holds the entry that followed
+            }
+        }
+    }
+#endif
     if (!g_cfg.active)
         return;
     HookGuard hg;

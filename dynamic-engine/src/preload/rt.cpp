@@ -5,6 +5,7 @@
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
+#include <dlfcn.h>
 #include <fcntl.h>
 #include <sched.h>
 #include <sys/mman.h>
@@ -399,18 +400,62 @@ void reset_lock() { g_lock.reset(); }
 } // namespace lc
 
 #if defined(__APPLE__)
-// glibc spells for the allocator the wrappers use when tracking is off.
-// Bound here, in a file that does not define malloc, so they stay libSystem.
+namespace {
+// glibc spells for the allocator the wrappers use when tracking is off: the
+// backing store of a tracked block, and a pointer the program never asked us
+// to track. On Linux those are libc's own entry points. Here they are not:
+// dyld's interpose table rewrites every reference to `malloc` in the process,
+// and that includes the references in this dylib, so `free(p)` written in this
+// file is `lc_free`, and the fallback below would hand the pointer straight
+// back: free -> heap_free -> "not one of ours" -> free, forever, until the
+// stack runs out. libSystem's own functions are the ones behind RTLD_NEXT.
+template <class F> F libsystem(F &slot, const char *name) {
+    F f = __atomic_load_n(&slot, __ATOMIC_ACQUIRE);
+    if (LC_LIKELY(f != nullptr))
+        return f;
+    void *sym;
+    {
+        HookGuard hg;
+        sym = dlsym(RTLD_NEXT, name);
+    }
+    if (!sym)
+        die("cannot find the allocator to forward to");
+    f = reinterpret_cast<F>(sym);
+    __atomic_store_n(&slot, f, __ATOMIC_RELEASE);
+    return f;
+}
+
+using MallocFn = void *(*)(size_t);
+using CallocFn = void *(*)(size_t, size_t);
+using ReallocFn = void *(*)(void *, size_t);
+using MemalignFn = int (*)(void **, size_t, size_t);
+using FreeFn = void (*)(void *);
+
+MallocFn g_system_malloc;
+CallocFn g_system_calloc;
+ReallocFn g_system_realloc;
+MemalignFn g_system_memalign;
+FreeFn g_system_free;
+} // namespace
+
 extern "C" {
-void *__libc_malloc(size_t n) { return malloc(n); }
-void *__libc_calloc(size_t a, size_t b) { return calloc(a, b); }
-void *__libc_realloc(void *p, size_t n) { return realloc(p, n); }
+void *__libc_malloc(size_t n) {
+    return libsystem(g_system_malloc, "malloc")(n);
+}
+void *__libc_calloc(size_t a, size_t b) {
+    return libsystem(g_system_calloc, "calloc")(a, b);
+}
+void *__libc_realloc(void *p, size_t n) {
+    return libsystem(g_system_realloc, "realloc")(p, n);
+}
 void *__libc_memalign(size_t align, size_t n) {
     if (align < sizeof(void *))
         align = sizeof(void *);
     void *p = nullptr;
-    return posix_memalign(&p, align, n) == 0 ? p : nullptr;
+    return libsystem(g_system_memalign, "posix_memalign")(&p, align, n) == 0
+               ? p
+               : nullptr;
 }
-void __libc_free(void *p) { free(p); }
-}
+void __libc_free(void *p) { libsystem(g_system_free, "free")(p); }
+} // extern "C"
 #endif
