@@ -4,13 +4,14 @@
     python3 tools/determinism.py --leakcheck build/leakcheck --out digests.json
     python3 tools/determinism.py --compare digests-linux.json digests-windows.json
 
-The fixture is built in a temporary directory and that directory's path is
-replaced with `<tmp>` before hashing, because it is the only part of a report
-that legitimately differs between machines. Everything else has to match: key
-order, numbers, message text, rule order, line endings. A renderer that
-iterates a hash map, a rule that reads the locale, or a report whose file order
-follows the threads fails the comparison between the CI jobs that produce these
-digests.
+The fixture is built in a temporary directory under the working directory (so
+SARIF reports it SRCROOT-relative the same way on every system), and both that
+directory and the working directory are replaced with `<tmp>` before hashing:
+they are the only part of a report that legitimately differs between machines.
+Everything else has to match: key order, numbers, message text, rule order, line
+endings. A renderer that iterates a hash map, a rule that reads the locale, or a
+report whose file order follows the threads fails the comparison between the CI
+jobs that produce these digests.
 
 `scan` is the mode used: it needs no compiler or runtime and produces the same
 findings from the same bytes on all three systems. The unit and command-line
@@ -31,6 +32,17 @@ EICAR = ("X5O!P%@AP[4\\PZX54(P^)7CC)7}$"
          "EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*")
 
 
+# The reader's rules — reporter/src/render_sarif.cpp — so the same text can
+# be matched where SARIF has percent-encoded it.
+def uri_escape(s):
+    safe = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/-_.~"
+    out = []
+    for byte in s.encode("utf-8"):
+        c = chr(byte)
+        out.append(c if c in safe else "%%%02X" % byte)
+    return "".join(out)
+
+
 def run(leakcheck, args):
     p = subprocess.run([leakcheck] + args, capture_output=True, text=True,
                        encoding="utf-8", errors="replace", timeout=120)
@@ -39,18 +51,32 @@ def run(leakcheck, args):
 
 
 def normalise(text, root):
-    # The temporary directory, in either separator style, is the one honest
-    # difference between the systems. macOS hands out /var/folders/..., and /var
-    # is a symlink to /private/var there, so the resolved spelling is substituted
-    # too: otherwise a report naming /private/var/... keeps the prefix and reads
-    # /private<tmp>/... while Linux reads <tmp>/.... Longest first, so the
-    # resolved form is not left half-replaced by the shorter one.
-    forms = {root, root.replace("\\", "/"), root.replace("/", "\\")}
-    real = os.path.realpath(root)
-    forms |= {real, real.replace("\\", "/"), real.replace("/", "\\")}
-    for form in sorted(forms, key=len, reverse=True):
+    # The temporary directory and the working directory are the honest
+    # differences between the systems. Each one arrives in several spellings:
+    # plain text with either separator on the OS, as macOS resolves it
+    # (realpath, so /var/folders/... and /private/var/folders/... both match),
+    # JSON-escaped (Windows argv keeps its backslashes twice) and
+    # SARIF-percent-encoded (the same uri_escape the reporter writes). Longest
+    # first, so a temp path is replaced before the working directory that is
+    # its prefix.
+    def forms(base):
+        spellings = {base, base.replace("\\", "/"), base.replace("/", "\\")}
+        real = os.path.realpath(base)
+        spellings |= {real, real.replace("\\", "/"), real.replace("/", "\\")}
+        out = set()
+        for s in spellings:
+            out |= {s, s.replace("\\", "\\\\"), uri_escape(s)}
+        return out
+
+    for form in sorted(forms(root) | forms(os.getcwd()), key=len, reverse=True):
         text = text.replace(form, "<tmp>")
-    return text
+    # SRCROOT-relative SARIF locations keep the temp directory's own name with
+    # no separator before it (the URI starts with the name): erase that too.
+    base = os.path.basename(os.path.realpath(root))
+    text = text.replace(base, "<tmp>")
+    # Whatever survived as separators folds to '/': the tool writes paths in
+    # the generic (forward-slash) form, and the remnant is Windows's argv.
+    return text.replace("\\\\", "/").replace("%5C", "/")
 
 
 def digest(text):
@@ -67,7 +93,14 @@ def write_fixture(root):
 
 
 def produce(leakcheck, out_path):
-    with tempfile.TemporaryDirectory() as root:
+    # Under the working directory, not /tmp: the failing artifact branches in
+    # render_sarif.cpp depend on whether a file lies under SRCROOT, and a
+    # per-OS temp location (/var/folders on macOS, a drive letter on Windows)
+    # puts the systems on different branches like nothing else can. In the
+    # working directory every report is SRCROOT-relative, and the one runner-
+    # specific string left, the base id itself, is normalise()d away.
+    cwd = os.getcwd()
+    with tempfile.TemporaryDirectory(prefix="leakcheck-determinism-", dir=cwd) as root:
         write_fixture(root)
         target = os.path.join(root, "fixture")
         os.makedirs(target)

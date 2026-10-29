@@ -273,8 +273,18 @@ jobs:
           pattern: determinism-*
           path: digests
           merge-multiple: true
-      # Byte-identical JSON and SARIF from all three systems for the same files.
-      - name: Compare the reports from every system
-        run: |
-          ls -l digests
-          python3 tools/determinism.py --compare digests/*.json
+  # Byte-identical JSON and SARIF from all three systems for the same files.
+  # The harness normalises what a system legitimately owns, so a DIFFERS line
+  # names a real platform dependence; the annotations are public, and say
+  # which key differs and the first lines of its report diff.
+  - name: Compare the reports from every system
+    run: |
+      ls -l digests
+      code=0
+      python3 tools/determinism.py --compare digests/*.json 2>&1 | tee compare.log || code=$?
+      [ "$code" -eq 0 ] && exit 0
+      grep -E '^(DIFFERS|MISSING)' compare.log | head -n 6 |
+        while IFS= read -r line; do echo "::error title=determinism::${line}"; done
+      awk '/^  ---/{on=1} on' compare.log | head -n 4 |
+        while IFS= read -r line; do echo "::error title=determinism diff::${line}"; done
+      exit 1
