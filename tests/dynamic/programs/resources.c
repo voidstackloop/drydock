@@ -459,7 +459,11 @@ static void scm_rights(void) {
     c->cmsg_type = SCM_RIGHTS;
     c->cmsg_len = CMSG_LEN(sizeof(int));
     memcpy(CMSG_DATA(c), &pass, sizeof pass);
+#if defined(__APPLE__)
+    sendmsg(sv[0], &msg, 0); // Darwin has no MSG_NOSIGNAL
+#else
     sendmsg(sv[0], &msg, MSG_NOSIGNAL);
+#endif
     close(pass);
     memset(&msg, 0, sizeof msg);
     memset(cbuf, 0, sizeof cbuf);

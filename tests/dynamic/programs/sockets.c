@@ -184,7 +184,11 @@ int main(int argc, char **argv) {
         }
 #endif
         else if (!strcmp(call, "send"))
+#if defined(__APPLE__) // Darwin has no MSG_NOSIGNAL; the flag is not what is tested
+            send(fd, "x", 1, 0);
+#else
             send(fd, "x", 1, MSG_NOSIGNAL);
+#endif
 #if !defined(__APPLE__) // Linux-only zero-copy calls
         else if (!strcmp(call, "copy_file_range"))
             copy_file_range(sv[1], NULL, fd, NULL, 1, 0);
@@ -374,7 +378,11 @@ int main(int argc, char **argv) {
         if (socketpair(AF_UNIX, SOCK_DGRAM, 0, d) != 0)
             return 1;
         for (int i = 0; i < 1200; i++) {
+#if defined(__APPLE__)
+            send(d[0], "", 0, 0); // no MSG_NOSIGNAL on Darwin
+#else
             send(d[0], "", 0, MSG_NOSIGNAL);
+#endif
             read(d[1], buf, sizeof buf);
         }
         close(d[0]);
