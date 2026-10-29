@@ -124,6 +124,27 @@ jobs:
           tail -n 5 tests-macos.log |
             while IFS= read -r line; do echo "::error title=macos tests stopped at::${line}"; done
           exit 1
+      # A target that is still alive is the interesting case: sample() gives its
+      # stack, which says where the runtime is stuck, and no job log is needed
+      # to read that.
+      - name: Diagnose one dynamic run
+        if: failure()
+        run: |
+          build/leakcheck dynamic --timeout 20 build/test-programs/no_bugs > one.out 2>&1 &
+          job=$!
+          sleep 4
+          pid=$(pgrep -f 'test-programs/no_bugs' | head -n 1)
+          if [ -n "$pid" ]; then
+            sample "$pid" 1 -file one.sample > /dev/null 2>&1 || true
+            grep -E '^ +[0-9]+ ' one.sample | head -n 6 |
+              while IFS= read -r line; do echo "::error title=macos stack::${line}"; done
+          else
+            echo "::error title=macos stack::the target was gone after 4s"
+          fi
+          wait "$job" || true
+          tail -n 4 one.out |
+            while IFS= read -r line; do echo "::error title=macos one run::${line}"; done
+          exit 1
 
   # Reports only, without the runtime: this job proves the JSON and SARIF are
   # the same bytes as on the other two systems, and stays fast enough that a
