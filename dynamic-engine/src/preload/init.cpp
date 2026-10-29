@@ -15,6 +15,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <dlfcn.h>
+#if defined(__APPLE__)
+#include <crt_externs.h> // _NSGetEnviron: where the environment lives on Darwin
+#endif
 #include <execinfo.h>
 #include <pthread.h>
 #include <sys/syscall.h>
@@ -163,8 +166,8 @@ __attribute__((constructor(101))) void on_load() {
     // not the program touching its environment.
     if (!g_cfg.trace_children) {
         static constexpr char kPreload[] = "DYLD_INSERT_LIBRARIES=";
-        extern char **environ;
-        for (char **e = environ; e && *e; ++e) {
+        char **env = *_NSGetEnviron();
+        for (char **e = env; e && *e; ++e) {
             if (std::strncmp(*e, kPreload, sizeof kPreload - 1) == 0) {
                 for (char **m = e; *m; ++m)
                     *m = *(m + 1);

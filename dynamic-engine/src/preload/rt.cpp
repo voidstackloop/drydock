@@ -415,11 +415,11 @@ template <class F> F libsystem(F &slot, const char *name) {
         return f;
     void *sym;
     {
-        HookGuard hg;
+        lc::HookGuard hg;
         sym = dlsym(RTLD_NEXT, name);
     }
     if (!sym)
-        die("cannot find the allocator to forward to");
+        lc::die("cannot find the allocator to forward to");
     f = reinterpret_cast<F>(sym);
     __atomic_store_n(&slot, f, __ATOMIC_RELEASE);
     return f;
