@@ -1168,7 +1168,10 @@ static int run(const char *c) {
         mount("none", "/usr/bin/ls", "tmpfs", 0, 0);
 #endif
     } else if (!strcmp(c, "sys_umount")) {
+        // Darwin has unmount() instead, and it takes a flags argument.
+#if !defined(__APPLE__)
         umount("/usr/bin/ls");
+#endif
 #if !defined(__APPLE__) // no umount2() on Darwin; that test stays Linux-only
     } else if (!strcmp(c, "sys_umount2")) {
         umount2("/usr/bin/ls", 0);
