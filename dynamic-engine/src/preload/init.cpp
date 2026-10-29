@@ -152,6 +152,7 @@ int main_hook(int argc, char **argv, char **envp) {
 
 __attribute__((constructor(101))) void on_load() {
     ensure_init();
+    trace_step("on_load: initialized");
 #if defined(__APPLE__)
     // dyld refuses an inserted library whose architecture the program does not
     // have, and Apple's own programs (/bin/sh, /bin/true, /usr/bin/sleep) are
@@ -176,23 +177,35 @@ __attribute__((constructor(101))) void on_load() {
         }
     }
 #endif
-    if (!g_cfg.active)
+    trace_step("on_load: environment");
+    if (!g_cfg.active) {
+        trace_step("on_load: passive, nothing to set up");
         return;
+    }
     HookGuard hg;
     ErrnoSaver es;
     page_size();
+    trace_step("on_load: page size");
     stacks::init();
+    trace_step("on_load: images");
     // The first backtrace() loads the unwinder with dlopen, which allocates.
     void *warm[4];
     backtrace(warm, 4);
+    trace_step("on_load: unwinder");
     threads::init();
+    trace_step("on_load: threads");
     locks::init();
+    trace_step("on_load: locks");
     guard::init();
+    trace_step("on_load: guard pages");
     g_real_exit = reinterpret_cast<ExitFn>(dlsym(RTLD_NEXT, "exit"));
     g_real_uexit = reinterpret_cast<ExitFn>(dlsym(RTLD_NEXT, "_exit"));
+    trace_step("on_load: exit wrappers");
     pthread_atfork(fork_prepare, fork_parent, fork_child);
+    trace_step("on_load: atfork");
     report::open_stream();
     stacks::set_ready();
+    trace_step("on_load: ready");
 }
 
 __attribute__((destructor(101))) void on_unload() {
@@ -236,9 +249,11 @@ void ensure_init() {
         {
             HookGuard hg;
             ErrnoSaver es;
+            trace_step("ensure_init: loading the configuration");
             load_config();
             if (g_cfg.active)
                 fd_reserve_make();
+            trace_step("ensure_init: configured");
         }
         __atomic_store_n(&g_init_state, 2u, __ATOMIC_RELEASE);
         return;

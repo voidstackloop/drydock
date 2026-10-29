@@ -116,6 +116,28 @@ void die(const char *msg) {
     _exit(70);
 }
 
+#if defined(__APPLE__)
+void trace_step(const char *what) {
+    static int enabled = -1;
+    if (enabled < 0)
+        enabled = getenv("LEAKCHECK_TRACE") ? 1 : 0;
+    if (!enabled)
+        return;
+    char line[160];
+    size_t n = 0;
+    for (const char *pre = "lc-trace: "; *pre && n + 1 < sizeof line; ++pre)
+        line[n++] = *pre;
+    for (; *what && n + 1 < sizeof line; ++what)
+        line[n++] = *what;
+    line[n++] = '\n';
+    // raw syscall: write() is one of the functions this library hooks, and this
+    // runs while the runtime is still setting itself up.
+    syscall(SYS_write, 2, line, n);
+}
+#else
+void trace_step(const char *what) { (void)what; }
+#endif
+
 bool write_all(int fd, const char *p, size_t n) {
     while (n) {
         ssize_t w = write(fd, p, n);

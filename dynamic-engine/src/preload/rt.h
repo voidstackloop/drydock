@@ -131,6 +131,11 @@ void set_errno(int e);
 
 [[noreturn]] void die(const char *msg);
 
+// A line on stderr when LEAKCHECK_TRACE is set, written with a raw syscall so
+// the call cannot come back through one of the hooks this library installs. Off
+// everywhere else, and off on other systems.
+void trace_step(const char *what);
+
 class Buf {
   public:
     Buf(char *p, size_t cap) : p_(p), cap_(cap) {}

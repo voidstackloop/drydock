@@ -21,6 +21,13 @@ using namespace lc;
 namespace {
 
 void *c_alloc(Kind kind, size_t n, size_t align, bool zero) {
+    if (LC_UNLIKELY(!tl_in_hook)) {
+        static bool traced;
+        if (!traced) {
+            traced = true;
+            trace_step("c_alloc: the program's first allocation");
+        }
+    }
     if (LC_UNLIKELY(tl_in_hook)) {
         void *p = ih::alloc(n, align);
         if (!p)
@@ -54,6 +61,13 @@ void *c_alloc(Kind kind, size_t n, size_t align, bool zero) {
 void c_free(DeKind dk, void *p, size_t hint, bool sized) {
     if (!p)
         return;
+    if (LC_UNLIKELY(!tl_in_hook)) {
+        static bool traced;
+        if (!traced) {
+            traced = true;
+            trace_step("c_free: the program's first free");
+        }
+    }
     if (ih::owns(p)) {
         ih::free(p);
         return;
