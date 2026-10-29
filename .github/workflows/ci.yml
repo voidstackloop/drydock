@@ -144,6 +144,18 @@ jobs:
           wait "$job" || true
           tail -n 4 one.out |
             while IFS= read -r line; do echo "::error title=macos one run::${line}"; done
+          # ROOT_PID names another process, so the runtime's constructor returns
+          # before it sets anything up: a target that survives this points the
+          # crash at the start-up, one that dies points it at the hooks.
+          code=0
+          DYLD_INSERT_LIBRARIES="$PWD/build/libleakcheck_preload.dylib" \
+            LEAKCHECK_ROOT_PID=1 LEAKCHECK_REPORT="$PWD/inactive.txt" \
+            build/test-programs/no_bugs > inactive.out 2>&1 || code=$?
+          echo "::error title=macos inactive runtime::exit ${code}"
+          tail -n 2 inactive.out |
+            while IFS= read -r line; do echo "::error title=macos inactive out::${line}"; done
+          tail -n 3 lldb.out 2>/dev/null |
+            while IFS= read -r line; do echo "::error title=macos lldb said::${line}"; done || true
           # The target dies too fast to sample: let lldb stop on the signal and
           # print where it stopped. ROOT_PID=0 makes the runtime active without
           # leakcheck having started the process itself.

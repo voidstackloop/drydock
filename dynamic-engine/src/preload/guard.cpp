@@ -23,7 +23,12 @@ namespace {
 
 uint64_t g_counter;
 uint64_t g_live;
-struct sigaction g_prev;
+struct sigaction g_prev_segv;
+#if defined(__APPLE__)
+// A PROT_NONE page faults as SIGBUS on Darwin, so the guard pages need that
+// signal as well as SIGSEGV (see leakscan.cpp, which probes memory with both).
+struct sigaction g_prev_bus;
+#endif
 bool g_installed;
 
 enum class Where { LeftGuard, Data, RightGuard };
@@ -77,13 +82,19 @@ uintptr_t fault_pc(void *uctx, bool *is_write) {
 }
 
 void chain(int sig, siginfo_t *si, void *uctx) {
-    if (g_prev.sa_flags & SA_SIGINFO) {
-        if (g_prev.sa_sigaction) {
-            g_prev.sa_sigaction(sig, si, uctx);
+    struct sigaction &prev =
+#if defined(__APPLE__)
+        sig == SIGBUS ? g_prev_bus : g_prev_segv;
+#else
+        g_prev_segv;
+#endif
+    if (prev.sa_flags & SA_SIGINFO) {
+        if (prev.sa_sigaction) {
+            prev.sa_sigaction(sig, si, uctx);
             return;
         }
-    } else if (g_prev.sa_handler != SIG_DFL && g_prev.sa_handler != SIG_IGN) {
-        g_prev.sa_handler(sig);
+    } else if (prev.sa_handler != SIG_DFL && prev.sa_handler != SIG_IGN) {
+        prev.sa_handler(sig);
         return;
     }
     // Default action: returning re-executes the faulting access and kills us.
@@ -178,8 +189,21 @@ void init() {
     sa.sa_sigaction = on_segv;
     sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
     sigemptyset(&sa.sa_mask);
-    if (sigaction(SIGSEGV, &sa, &g_prev) == 0)
+#if defined(__APPLE__)
+    // Both, and SIGBUS first: a guarded access that faults takes the process
+    // down unless the signal it actually raises has a handler, and on Darwin
+    // that is SIGBUS.
+    if (sigaction(SIGBUS, &sa, &g_prev_bus) != 0)
+        return;
+    if (sigaction(SIGSEGV, &sa, &g_prev_segv) != 0) {
+        sigaction(SIGBUS, &g_prev_bus, nullptr);
+        return;
+    }
+    g_installed = true;
+#else
+    if (sigaction(SIGSEGV, &sa, &g_prev_segv) == 0)
         g_installed = true;
+#endif
 }
 
 bool want(size_t size, size_t align) {
